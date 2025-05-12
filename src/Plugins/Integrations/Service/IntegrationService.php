@@ -150,9 +150,7 @@ class IntegrationService
      */
     public function deleteIntegration(IntegrationEntity $integration): void
     {
-        // Soft delete by changing status
-        $integration->setStatus('deleted');
-        $this->entityManager->persist($integration);
+        $this->entityManager->remove($integration);
         $this->entityManager->flush();
     }
 

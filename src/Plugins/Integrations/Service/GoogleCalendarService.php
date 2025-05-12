@@ -493,13 +493,25 @@ class GoogleCalendarService extends IntegrationService
             if ($start->date) {
                 // All-day event
                 $isAllDay = true;
-                $startTime = new DateTime($start->date);
-                $endTime = new DateTime($end->date);
+                $startTime = new DateTime($start->date, new \DateTimeZone('UTC'));
+                $endTime = new DateTime($end->date, new \DateTimeZone('UTC'));
             } else {
-                // Timed event
-                $startTime = new DateTime($start->dateTime);
-                $endTime = new DateTime($end->dateTime);
+                // Timed event - IMPORTANT: Explicitly convert to UTC
+                $startDateTime = $start->dateTime;
+                $endDateTime = $end->dateTime;
+                
+                // Get timezone from event or use UTC as fallback
+                $timezone = $start->timeZone ?: 'UTC';
+                
+                // Parse with original timezone
+                $startTime = new DateTime($startDateTime, new \DateTimeZone($timezone));
+                $endTime = new DateTime($endDateTime, new \DateTimeZone($timezone));
+                
+                // Convert to UTC
+                $startTime->setTimezone(new \DateTimeZone('UTC'));
+                $endTime->setTimezone(new \DateTimeZone('UTC'));
             }
+
             
             // Create or update the event
             if ($existingEvent) {

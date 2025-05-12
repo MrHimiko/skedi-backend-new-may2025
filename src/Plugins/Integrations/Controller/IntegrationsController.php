@@ -4,24 +4,33 @@ namespace App\Plugins\Integrations\Controller;
 
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
-use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\Routing\Annotation\Route;
+use Symfony\Component\HttpFoundation\Request;
 use App\Service\ResponseService;
-use App\Plugins\Integrations\Service\IntegrationService;
+use App\Plugins\Integrations\Service\GoogleCalendarService;
+use App\Plugins\Integrations\Repository\IntegrationRepository;
 use App\Plugins\Integrations\Exception\IntegrationException;
+use Psr\Log\LoggerInterface;
+use DateTime;
 
 #[Route('/api')]
 class IntegrationsController extends AbstractController
 {
     private ResponseService $responseService;
-    private IntegrationService $integrationService;
-    
+    private GoogleCalendarService $googleCalendarService;
+    private IntegrationRepository $integrationRepository;
+    private LoggerInterface $logger;
+
     public function __construct(
         ResponseService $responseService,
-        IntegrationService $integrationService
+        GoogleCalendarService $googleCalendarService,
+        IntegrationRepository $integrationRepository,
+        LoggerInterface $logger
     ) {
         $this->responseService = $responseService;
-        $this->integrationService = $integrationService;
+        $this->googleCalendarService = $googleCalendarService;
+        $this->integrationRepository = $integrationRepository;
+        $this->logger = $logger;
     }
     
     /**
@@ -89,4 +98,347 @@ class IntegrationsController extends AbstractController
             return $this->responseService->json(false, $e->getMessage(), null, 500);
         }
     }
+
+    
+
+    #[Route('/user/integrations/events', name: 'integration_events_get#', methods: ['GET'])]
+    public function getEvents(Request $request): JsonResponse
+    {
+        $user = $request->attributes->get('user');
+        
+        // Get query parameters with defaults
+        $startDate = $request->query->get('start_date', 'today');
+        $endDate = $request->query->get('end_date', '+7 days');
+        $status = $request->query->get('status', 'all'); // all, confirmed, cancelled
+        $sync = $request->query->get('sync', 'auto'); // auto, force, none
+        $source = $request->query->get('source'); // Optional provider filter
+        $timeRange = $request->query->get('time_range'); // Optional: past, upcoming, current
+        $page = max(1, (int)$request->query->get('page', 1));
+        $limit = min(100, max(10, (int)$request->query->get('limit', 50)));
+        
+        try {
+            $startDateTime = new DateTime($startDate);
+            $endDateTime = new DateTime($endDate);
+            
+            // Apply time range filter if specified
+            if ($timeRange) {
+                $now = new DateTime();
+                
+                switch ($timeRange) {
+                    case 'past':
+                        $endDateTime = $now;
+                        break;
+                    case 'upcoming':
+                        $startDateTime = $now;
+                        break;
+                    case 'current':
+                        // Events happening now (started but not ended)
+                        // We'll handle this in the query filtering
+                        break;
+                }
+            }
+            
+            // Get all active integrations for the user
+            $criteria = ['user' => $user, 'status' => 'active'];
+            
+            // Filter by provider if specified
+            if ($source) {
+                $criteria['provider'] = $source;
+            }
+            
+            $integrations = $this->integrationRepository->findBy($criteria);
+            
+            if (empty($integrations)) {
+                return $this->responseService->json(true, 'No connected integrations found.', [
+                    'events' => [],
+                    'pagination' => [
+                        'current_page' => $page,
+                        'total_pages' => 0, 
+                        'total_items' => 0,
+                        'page_size' => $limit
+                    ],
+                    'metadata' => [
+                        'providers' => []
+                    ]
+                ]);
+            }
+            
+            $allEvents = [];
+            $metadata = [
+                'providers' => []
+            ];
+            
+            // Process each integration
+            foreach ($integrations as $integration) {
+                $provider = $integration->getProvider();
+                
+                // Initialize provider metadata
+                $metadata['providers'][$provider] = [
+                    'connected' => true,
+                    'last_synced' => $integration->getLastSynced() ? 
+                        $integration->getLastSynced()->format('Y-m-d H:i:s') : null,
+                    'synced_now' => false,
+                    'count' => 0
+                ];
+                
+                // Determine if we should sync
+                $shouldSync = false;
+                if ($sync === 'force') {
+                    $shouldSync = true;
+                } else if ($sync === 'auto') {
+                    $shouldSync = !$integration->getLastSynced() || 
+                                 $integration->getLastSynced() < new DateTime('-30 minutes');
+                }
+                
+                try {
+                    switch ($provider) {
+                        case 'google_calendar':
+                            // Sync if needed
+                            if ($shouldSync) {
+                                $this->googleCalendarService->syncEvents($integration, $startDateTime, $endDateTime);
+                                $metadata['providers'][$provider]['synced_now'] = true;
+                            }
+                            
+                            // Get events from database based on specified filters
+                            $events = $this->getGoogleCalendarEvents(
+                                $user, 
+                                $startDateTime, 
+                                $endDateTime, 
+                                $status,
+                                $timeRange
+                            );
+                            
+                            $allEvents = array_merge($allEvents, $events);
+                            $metadata['providers'][$provider]['count'] = count($events);
+                            break;
+                            
+                        // Add cases for other providers as they are implemented
+                        default:
+                            $this->logger->warning('Unsupported provider type', [
+                                'provider' => $provider,
+                                'integration_id' => $integration->getId()
+                            ]);
+                            break;
+                    }
+                } catch (\Exception $e) {
+                    $this->logger->error('Error fetching events for provider: ' . $e->getMessage(), [
+                        'provider' => $provider,
+                        'integration_id' => $integration->getId()
+                    ]);
+                    
+                    $metadata['providers'][$provider]['error'] = $e->getMessage();
+                }
+            }
+            
+            // Sort events by start time
+            usort($allEvents, function($a, $b) {
+                $aStart = new DateTime($a['start_time']);
+                $bStart = new DateTime($b['start_time']);
+                return $aStart <=> $bStart;
+            });
+            
+            // Apply pagination
+            $totalEvents = count($allEvents);
+            $totalPages = ceil($totalEvents / $limit);
+            $offset = ($page - 1) * $limit;
+            $pagedEvents = array_slice($allEvents, $offset, $limit);
+            
+            return $this->responseService->json(true, 'Events retrieved successfully.', [
+                'events' => $pagedEvents,
+                'pagination' => [
+                    'current_page' => $page,
+                    'total_pages' => $totalPages,
+                    'total_items' => $totalEvents,
+                    'page_size' => $limit
+                ],
+                'metadata' => $metadata
+            ]);
+        } catch (IntegrationException $e) {
+            return $this->responseService->json(false, $e->getMessage(), null, 400);
+        } catch (\Exception $e) {
+            $this->logger->error('Error fetching integration events: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString()
+            ]);
+            return $this->responseService->json(false, $e, null, 500);
+        }
+    }
+
+
+    #[Route('/user/integrations/{id}/events', name: 'integration_events_by_id_get#', methods: ['GET'], requirements: ['id' => '\d+'])]
+    public function getEventsByIntegration(int $id, Request $request): JsonResponse
+    {
+        $user = $request->attributes->get('user');
+        
+        // Get query parameters with defaults
+        $startDate = $request->query->get('start_date', 'today');
+        $endDate = $request->query->get('end_date', '+7 days');
+        $status = $request->query->get('status', 'all'); // all, confirmed, cancelled
+        $sync = $request->query->get('sync', 'auto'); // auto, force, none
+        $timeRange = $request->query->get('time_range'); // Optional: past, upcoming, current
+        $page = max(1, (int)$request->query->get('page', 1));
+        $limit = min(100, max(10, (int)$request->query->get('limit', 50)));
+        
+        try {
+            // Find the integration
+            $integration = $this->integrationRepository->find($id);
+            
+            if (!$integration || $integration->getUser()->getId() !== $user->getId() || $integration->getStatus() !== 'active') {
+                return $this->responseService->json(false, 'Integration not found', null, 404);
+            }
+            
+            $startDateTime = new DateTime($startDate);
+            $endDateTime = new DateTime($endDate);
+            
+            // Apply time range filter if specified
+            if ($timeRange) {
+                $now = new DateTime();
+                
+                switch ($timeRange) {
+                    case 'past':
+                        $endDateTime = $now;
+                        break;
+                    case 'upcoming':
+                        $startDateTime = $now;
+                        break;
+                }
+            }
+            
+            $provider = $integration->getProvider();
+            $events = [];
+            $synced = false;
+            
+            // Determine if we should sync
+            $shouldSync = false;
+            if ($sync === 'force') {
+                $shouldSync = true;
+            } else if ($sync === 'auto') {
+                $shouldSync = !$integration->getLastSynced() || 
+                             $integration->getLastSynced() < new DateTime('-30 minutes');
+            }
+            
+            switch ($provider) {
+                case 'google_calendar':
+                    // Sync if needed
+                    if ($shouldSync) {
+                        $this->googleCalendarService->syncEvents($integration, $startDateTime, $endDateTime);
+                        $synced = true;
+                    }
+                    
+                    // Get events from database
+                    $events = $this->getGoogleCalendarEvents(
+                        $user, 
+                        $startDateTime, 
+                        $endDateTime, 
+                        $status,
+                        $timeRange
+                    );
+                    break;
+                    
+                default:
+                    return $this->responseService->json(false, 'Unsupported integration type', null, 400);
+            }
+            
+            // Sort events by start time
+            usort($events, function($a, $b) {
+                $aStart = new DateTime($a['start_time']);
+                $bStart = new DateTime($b['start_time']);
+                return $aStart <=> $bStart;
+            });
+            
+            // Apply pagination
+            $totalEvents = count($events);
+            $totalPages = ceil($totalEvents / $limit);
+            $offset = ($page - 1) * $limit;
+            $pagedEvents = array_slice($events, $offset, $limit);
+            
+            return $this->responseService->json(true, 'Events retrieved successfully.', [
+                'events' => $pagedEvents,
+                'pagination' => [
+                    'current_page' => $page,
+                    'total_pages' => $totalPages,
+                    'total_items' => $totalEvents,
+                    'page_size' => $limit
+                ],
+                'metadata' => [
+                    'provider' => $provider,
+                    'last_synced' => $integration->getLastSynced() ? 
+                        $integration->getLastSynced()->format('Y-m-d H:i:s') : null,
+                    'synced_now' => $synced
+                ]
+            ]);
+        } catch (IntegrationException $e) {
+            return $this->responseService->json(false, $e->getMessage(), null, 400);
+        } catch (\Exception $e) {
+            return $this->responseService->json(false, $e, null, 500);
+        }
+    }
+
+
+
+
+
+
+    /**
+     * Helper method to get Google Calendar events with filtering
+     */
+    private function getGoogleCalendarEvents(
+        $user, 
+        DateTime $startDateTime, 
+        DateTime $endDateTime, 
+        string $status = 'all',
+        ?string $timeRange = null
+    ): array {
+        // Get events from database
+        $googleEvents = $this->googleCalendarService->getEventsForDateRange($user, $startDateTime, $endDateTime);
+        
+        $now = new DateTime();
+        $standardizedEvents = [];
+        
+        foreach ($googleEvents as $event) {
+            // Skip based on status filter
+            if ($status !== 'all') {
+                if ($status === 'confirmed' && $event->getStatus() !== 'confirmed') {
+                    continue;
+                }
+                if ($status === 'cancelled' && $event->getStatus() !== 'cancelled') {
+                    continue;
+                }
+            }
+            
+            // Apply time range filter for 'current' events
+            if ($timeRange === 'current') {
+                $eventStart = $event->getStartTime();
+                $eventEnd = $event->getEndTime();
+                
+                // Only include events that are currently happening
+                if (!($eventStart <= $now && $eventEnd >= $now)) {
+                    continue;
+                }
+            }
+            
+            // Add to results
+            $standardizedEvents[] = [
+                'id' => $event->getId(),
+                'source' => 'google_calendar',
+                'source_id' => $event->getGoogleEventId(),
+                'title' => $event->getTitle(),
+                'description' => $event->getDescription(),
+                'start_time' => $event->getStartTime()->format('Y-m-d H:i:s'),
+                'end_time' => $event->getEndTime()->format('Y-m-d H:i:s'),
+                'location' => $event->getLocation(),
+                'is_all_day' => $event->isAllDay(),
+                'status' => $event->getStatus(),
+                'calendar_id' => $event->getCalendarId(),
+                'calendar_name' => $event->getCalendarName(),
+                'is_busy' => $event->isBusy(),
+                'html_link' => $event->getHtmlLink(),
+                'created' => $event->getCreated()->format('Y-m-d H:i:s'),
+                'updated' => $event->getUpdated()->format('Y-m-d H:i:s')
+            ];
+        }
+        
+        return $standardizedEvents;
+    }
+
+
 }
