@@ -49,6 +49,7 @@ class SyncGoogleCalendarsCommand extends Command
         $io->progressStart(count($integrations));
         $successCount = 0;
         $failureCount = 0;
+        $skippedCount = 0;
         
         foreach ($integrations as $integration) {
             try {
@@ -57,10 +58,17 @@ class SyncGoogleCalendarsCommand extends Command
                 $oneHourAgo = new DateTime('-1 hour');
                 
                 if (!$lastSynced || $lastSynced < $oneHourAgo) {
-                    // Sync the next 14 days by default
+                    // Sync a reasonable date range - today to 30 days in future
                     $startDate = new DateTime('today');
-                    $endDate = new DateTime('+14 days');
+                    $endDate = new DateTime('+30 days');
                     
+                    // Also sync 7 days in the past for recent events
+                    $pastStartDate = new DateTime('-7 days');
+                    
+                    // First sync recent past events
+                    $this->googleCalendarService->syncEvents($integration, $pastStartDate, $startDate);
+                    
+                    // Then sync future events
                     $events = $this->googleCalendarService->syncEvents($integration, $startDate, $endDate);
                     
                     $this->logger->info('Synced Google Calendar events', [
@@ -70,6 +78,8 @@ class SyncGoogleCalendarsCommand extends Command
                     ]);
                     
                     $successCount++;
+                } else {
+                    $skippedCount++;
                 }
             } catch (\Exception $e) {
                 $this->logger->error('Failed to sync calendar: ' . $e->getMessage(), [
@@ -85,7 +95,12 @@ class SyncGoogleCalendarsCommand extends Command
         
         $io->progressFinish();
         
-        $io->success(sprintf('Synced %d calendars successfully. Failed: %d', $successCount, $failureCount));
+        $io->success(sprintf(
+            'Synced %d calendars successfully. Skipped: %d. Failed: %d',
+            $successCount,
+            $skippedCount,
+            $failureCount
+        ));
         
         return Command::SUCCESS;
     }

@@ -67,17 +67,21 @@ class IntegrationsController extends AbstractController
      * Delete integration
      */
     #[Route('/user/integrations/{id}', name: 'integration_delete#', methods: ['DELETE'])]
-    public function deleteIntegration(int $id, Request $request): JsonResponse
+    public function deleteIntegration(string $id, Request $request): JsonResponse
     {
         $user = $request->attributes->get('user');
         
         try {
-            $integration = $this->integrationService->getIntegration($id, $user);
+            // Convert ID to integer
+            $integrationId = (int) $id;
+            
+            $integration = $this->integrationService->getIntegration($integrationId, $user);
             
             if (!$integration) {
                 return $this->responseService->json(false, 'Integration not found', null, 404);
             }
             
+            // Delete the integration (PostgreSQL will handle cascading deletes)
             $this->integrationService->deleteIntegration($integration);
             
             return $this->responseService->json(true, 'Integration deleted successfully');

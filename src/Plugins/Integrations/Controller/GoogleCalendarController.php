@@ -117,10 +117,31 @@ class GoogleCalendarController extends AbstractController
         $user = $request->attributes->get('user');
         $startDate = $request->query->get('start_date', 'today');
         $endDate = $request->query->get('end_date', '+7 days');
+        $autoSync = $request->query->get('sync', 'auto'); // Add this parameter
         
         try {
             $startDateTime = new DateTime($startDate);
             $endDateTime = new DateTime($endDate);
+            
+            // Get the user's integration
+            $integration = $this->googleCalendarService->getUserIntegration($user);
+            
+            if (!$integration) {
+                return $this->responseService->json(false, 'Google Calendar integration not found. Please connect your calendar first.', null, 404);
+            }
+            
+            // Add auto-sync logic
+            $shouldSync = false;
+            if ($autoSync === 'force') {
+                $shouldSync = true;
+            } else if ($autoSync === 'auto') {
+                $shouldSync = !$integration->getLastSynced() || 
+                             $integration->getLastSynced() < new DateTime('-30 minutes');
+            }
+            
+            if ($shouldSync) {
+                $this->googleCalendarService->syncEvents($integration, $startDateTime, $endDateTime);
+            }
             
             $events = $this->googleCalendarService->getEventsForDateRange($user, $startDateTime, $endDateTime);
             
@@ -128,7 +149,17 @@ class GoogleCalendarController extends AbstractController
                 return $event->toArray();
             }, $events);
             
-            return $this->responseService->json(true, 'retrieve', $result);
+            return $this->responseService->json(true, 'retrieve', [
+                'events' => $result,
+                'metadata' => [
+                    'total' => count($result),
+                    'start_date' => $startDateTime->format('Y-m-d H:i:s'),
+                    'end_date' => $endDateTime->format('Y-m-d H:i:s'),
+                    'last_synced' => $integration->getLastSynced() ? 
+                        $integration->getLastSynced()->format('Y-m-d H:i:s') : null,
+                    'synced_now' => $shouldSync
+                ]
+            ]);
         } catch (\Exception $e) {
             return $this->responseService->json(false, $e->getMessage(), null, 500);
         }

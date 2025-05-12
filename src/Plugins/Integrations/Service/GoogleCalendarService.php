@@ -74,35 +74,35 @@ class GoogleCalendarService extends IntegrationService
     {
         $client = new GoogleClient();
         
-        // 1. Set exact credentials without any string manipulation
+        // Set exact credentials without any string manipulation
         $clientId = '263415563843-iisvu1oericu0v5mvc7bl2c1p3obq2mq.apps.googleusercontent.com';
         $clientSecret = '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';
         $redirectUri = 'https://app.skedi.com/oauth/google/callback';
         
-        // 2. Log what we're setting
+        // Log what we're setting
         $this->logger->info('Setting Google client credentials', [
             'client_id_length' => strlen($clientId),
             'client_secret_length' => strlen($clientSecret),
             'redirect_uri' => $redirectUri
         ]);
         
-        // 3. Set client parameters
+        // Set client parameters
         $client->setClientId($clientId);
         $client->setClientSecret($clientSecret);
         $client->setRedirectUri($redirectUri);
         
-        // 4. Set scopes exactly as they should be (no string interpolation)
+        // Set scopes exactly as they should be (no string interpolation)
         $client->setScopes([
             'https://www.googleapis.com/auth/calendar.readonly',
             'https://www.googleapis.com/auth/calendar.events'
         ]);
         
-        // 5. Standard OAuth parameters
+        // Standard OAuth parameters
         $client->setAccessType('offline');
         $client->setPrompt('consent');
         $client->setIncludeGrantedScopes(true);
         
-        // 6. Handle existing tokens if integration provided
+        // Handle existing tokens if integration provided
         if ($integration && $integration->getAccessToken()) {
             // Simplified token handling
             $tokenData = ['access_token' => $integration->getAccessToken()];
@@ -122,10 +122,29 @@ class GoogleCalendarService extends IntegrationService
      */
     public function getAuthUrl(): string
     {
-        $client = $this->getGoogleClient();
+        $client = new GoogleClient();
+        
+        $clientId = '263415563843-iisvu1oericu0v5mvc7bl2c1p3obq2mq.apps.googleusercontent.com';
+        $clientSecret = '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';
+        $redirectUri = 'https://app.skedi.com/oauth/google/callback';
+        
+        $client->setClientId($clientId);
+        $client->setClientSecret($clientSecret);
+        $client->setRedirectUri($redirectUri);
+        $client->setAccessType('offline');
+        $client->setPrompt('consent');
+        $client->setIncludeGrantedScopes(true);
+        
+        // Include userinfo.email scope
+        $client->setScopes([
+            'https://www.googleapis.com/auth/calendar.readonly',
+            'https://www.googleapis.com/auth/calendar.events',
+            'https://www.googleapis.com/auth/userinfo.email'
+        ]);
         
         return $client->createAuthUrl();
     }
+
 
 
 
@@ -135,104 +154,186 @@ class GoogleCalendarService extends IntegrationService
     public function handleAuthCallback(UserEntity $user, string $code): IntegrationEntity
     {
         try {
-            // 1. Get a fresh client with proper credentials
-            $client = $this->getGoogleClient();
+            // Create a new Google client for this authentication flow
+            $client = new GoogleClient();
             
-            // 2. Exchange authorization code for access token
-            $accessToken = $client->fetchAccessTokenWithAuthCode($code);
+            // Set direct credentials
+            $clientId = '263415563843-iisvu1oericu0v5mvc7bl2c1p3obq2mq.apps.googleusercontent.com';
+            $clientSecret = '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';
+            $redirectUri = 'https://app.skedi.com/oauth/google/callback';
             
-            if (isset($accessToken['error'])) {
-                throw new IntegrationException('Failed to get access token: ' . $accessToken['error']);
+            // Set up client configuration
+            $client->setClientId($clientId);
+            $client->setClientSecret($clientSecret);
+            $client->setRedirectUri($redirectUri);
+            $client->setAccessType('offline');
+            $client->setPrompt('consent');
+            
+            // Set scopes
+            $client->setScopes([
+                'https://www.googleapis.com/auth/calendar.readonly',
+                'https://www.googleapis.com/auth/calendar.events',
+                'https://www.googleapis.com/auth/userinfo.email'
+            ]);
+            
+            // Exchange the authorization code for an access token
+            try {
+                $accessToken = $client->fetchAccessTokenWithAuthCode($code);
+                
+                if (isset($accessToken['error'])) {
+                    throw new IntegrationException('Failed to get access token: ' . 
+                        ($accessToken['error_description'] ?? $accessToken['error']));
+                }
+            } catch (\Exception $e) {
+                throw new IntegrationException('Token exchange failed: ' . $e->getMessage());
             }
             
-            // 3. Set the access token on the client (important for subsequent API calls)
-            $client->setAccessToken($accessToken);
-            
-            // 4. Get user info with the authenticated client
-            $oauth2 = new \Google\Service\Oauth2($client);
-            $userInfo = $oauth2->userinfo->get();
-            $name = $userInfo->getEmail() ?: 'Google Calendar';
-            
-            // 5. Create expiration date from token info
+            // Create expiration date
             $expiresIn = isset($accessToken['expires_in']) ? $accessToken['expires_in'] : 3600;
             $expiresAt = new DateTime();
             $expiresAt->modify("+{$expiresIn} seconds");
             
-            // 6. Check if integration already exists
+            // Try to get Google account email
+            $googleEmail = null;
+            $googleUserId = null;
+            
+            try {
+                // Create a new client just for this operation
+                $userClient = new GoogleClient();
+                $userClient->setClientId($clientId);
+                $userClient->setClientSecret($clientSecret);
+                
+                // Set the access token we received
+                $userClient->setAccessToken($accessToken);
+                
+                // Call the userinfo API
+                $oauth2 = new \Google\Service\Oauth2($userClient);
+                $userInfo = $oauth2->userinfo->get();
+                
+                // Store the email and user ID
+                $googleEmail = $userInfo->getEmail();
+                $googleUserId = $userInfo->getId();
+            } catch (\Exception $e) {
+                // Log error but continue
+                $this->logger->warning('Could not fetch Google account info, continuing anyway', [
+                    'error' => $e->getMessage()
+                ]);
+            }
+            
+            // Use Google email if available, otherwise fall back to user's system email
+            $integrationName = 'Google Calendar';
+            if ($googleEmail) {
+                $integrationName .= ' (' . $googleEmail . ')';
+            } else {
+                $integrationName .= ' (' . $user->getEmail() . ')';
+            }
+            
+            // Use Google user ID if available, otherwise generate one
+            $externalId = $googleUserId ?? 'google_' . uniqid();
+            
+            // Check if this user already has a Google Calendar integration
             $existingIntegration = $this->integrationRepository->findOneBy([
                 'user' => $user,
                 'provider' => 'google_calendar',
-                'externalId' => $userInfo->getId()
+                'status' => 'active'
             ]);
             
+            $integration = null;
+            
             if ($existingIntegration) {
-                // 7. Update existing integration
+                // Update existing integration
                 $existingIntegration->setAccessToken($accessToken['access_token']);
                 $existingIntegration->setTokenExpires($expiresAt);
+                
+                // Update name and external ID if we got new info
+                if ($googleEmail) {
+                    $existingIntegration->setName($integrationName);
+                }
+                
+                if ($googleUserId) {
+                    $existingIntegration->setExternalId($externalId);
+                }
                 
                 // Only update refresh token if a new one was provided
                 if (isset($accessToken['refresh_token'])) {
                     $existingIntegration->setRefreshToken($accessToken['refresh_token']);
                 }
                 
-                $existingIntegration->setStatus('active');
+                // Update config with Google email
+                $config = $existingIntegration->getConfig() ?? [];
+                if ($googleEmail) {
+                    $config['google_email'] = $googleEmail;
+                }
+                $existingIntegration->setConfig($config);
                 
                 $this->entityManager->persist($existingIntegration);
                 $this->entityManager->flush();
                 
-                // 8. Perform initial sync (without blocking the auth flow)
-                try {
-                    $this->syncEvents($existingIntegration, new DateTime('today'), new DateTime('+30 days'));
-                } catch (\Exception $e) {
-                    // Log the error but don't fail the auth process
-                    if (method_exists($this, 'logger') && $this->logger) {
-                        $this->logger->warning('Initial sync failed: ' . $e->getMessage());
-                    }
+                $integration = $existingIntegration;
+            } else {
+                // Create new integration
+                $integration = new IntegrationEntity();
+                $integration->setUser($user);
+                $integration->setProvider('google_calendar');
+                $integration->setName($integrationName);
+                $integration->setExternalId($externalId);
+                $integration->setAccessToken($accessToken['access_token']);
+                
+                if (isset($accessToken['refresh_token'])) {
+                    $integration->setRefreshToken($accessToken['refresh_token']);
                 }
                 
-                return $existingIntegration;
-            }
-            
-            // 9. Create new integration
-            $integration = new IntegrationEntity();
-            $integration->setUser($user);
-            $integration->setProvider('google_calendar');
-            $integration->setName($name);
-            $integration->setExternalId($userInfo->getId());
-            $integration->setAccessToken($accessToken['access_token']);
-            
-            if (isset($accessToken['refresh_token'])) {
-                $integration->setRefreshToken($accessToken['refresh_token']);
-            }
-            
-            $integration->setTokenExpires($expiresAt);
-            $integration->setScopes(implode(',', $client->getScopes()));
-            $integration->setConfig([
-                'email' => $userInfo->getEmail(),
-                'picture' => $userInfo->getPicture(),
-                'calendars' => [] // Will be populated on first sync
-            ]);
-            $integration->setStatus('active');
-            
-            $this->entityManager->persist($integration);
-            $this->entityManager->flush();
-            
-            // 10. Perform initial sync (without blocking the auth flow)
-            try {
-                $this->syncEvents($integration, new DateTime('today'), new DateTime('+30 days'));
-            } catch (\Exception $e) {
-                // Log the error but don't fail the auth process
-                if (method_exists($this, 'logger') && $this->logger) {
-                    $this->logger->warning('Initial sync failed: ' . $e->getMessage());
+                $integration->setTokenExpires($expiresAt);
+                $integration->setScopes(implode(',', $client->getScopes()));
+                
+                // Store Google email in the config
+                $config = [
+                    'calendars' => []
+                ];
+                
+                if ($googleEmail) {
+                    $config['google_email'] = $googleEmail;
                 }
+                
+                $integration->setConfig($config);
+                $integration->setStatus('active');
+                
+                $this->entityManager->persist($integration);
+                $this->entityManager->flush();
+            }
+            
+            // Perform initial sync as a background process to avoid blocking the auth flow
+            try {
+                // Sync events for the next 30 days to start
+                $startDate = new DateTime('today');
+                $endDate = new DateTime('+30 days');
+                
+                // Also sync events from the past 7 days
+                $pastStartDate = new DateTime('-7 days');
+                
+                // First sync past events 
+                $this->syncEvents($integration, $pastStartDate, $startDate);
+                
+                // Then sync future events
+                $this->syncEvents($integration, $startDate, $endDate);
+                
+                $this->logger->info('Initial calendar sync completed successfully', [
+                    'integration_id' => $integration->getId(),
+                    'user_id' => $user->getId()
+                ]);
+            } catch (\Exception $e) {
+                // Log but don't fail the auth process
+                $this->logger->warning('Initial calendar sync failed, but continuing', [
+                    'error' => $e->getMessage(),
+                    'integration_id' => $integration->getId(),
+                    'user_id' => $user->getId()
+                ]);
             }
             
             return $integration;
         } catch (IntegrationException $e) {
-            // Rethrow IntegrationExceptions directly
             throw $e;
         } catch (\Exception $e) {
-            // Wrap other exceptions
             throw new IntegrationException('Failed to authenticate with Google: ' . $e->getMessage());
         }
     }
@@ -550,6 +651,12 @@ class GoogleCalendarService extends IntegrationService
         try {
             $user = $integration->getUser();
             $client = $this->getGoogleClient($integration);
+            
+            // Check if token needs refresh
+            if ($integration->getTokenExpires() && $integration->getTokenExpires() < new DateTime()) {
+                $this->refreshToken($integration, $client);
+            }
+            
             $service = new GoogleCalendar($client);
             
             // Get calendar list
@@ -557,12 +664,21 @@ class GoogleCalendarService extends IntegrationService
             $savedEvents = [];
             $allEventIds = [];
             
-            // Start a database transaction for atomicity
-            $this->entityManager->beginTransaction();
-            
             // Format dates for Google API query
             $timeMin = $startDate->format('c');
             $timeMax = $endDate->format('c');
+            
+            // Start a database transaction
+            $this->entityManager->beginTransaction();
+            $batchSize = 0;
+            $maxBatchSize = 100; // Process this many events before flushing
+            
+            $this->logger->info('Starting Google Calendar sync', [
+                'integration_id' => $integration->getId(),
+                'user_id' => $user->getId(),
+                'start_date' => $startDate->format('Y-m-d'),
+                'end_date' => $endDate->format('Y-m-d')
+            ]);
             
             // Loop through each calendar
             foreach ($calendarList->getItems() as $calendarListEntry) {
@@ -578,56 +694,91 @@ class GoogleCalendarService extends IntegrationService
                     continue;
                 }
                 
-                // Get events from this calendar
-                $eventsResult = $service->events->listEvents($calendarId, [
-                    'timeMin' => $timeMin,
-                    'timeMax' => $timeMax,
-                    'showDeleted' => true,
-                    'singleEvents' => true,
-                    'orderBy' => 'startTime',
-                    'maxResults' => 2500 // Limit to avoid hitting API quotas
-                ]);
+                // Get events from this calendar with pagination
+                $pageToken = null;
                 
-                foreach ($eventsResult->getItems() as $event) {
-                    // Skip declined events where the user is not attending
-                    $attendees = $event->getAttendees();
-                    if ($attendees) {
-                        $userEmail = $integration->getConfig()['email'] ?? null;
-                        $isDeclined = false;
-                        
-                        foreach ($attendees as $attendee) {
-                            if ($attendee->getEmail() === $userEmail && $attendee->getResponseStatus() === 'declined') {
-                                $isDeclined = true;
-                                break;
+                do {
+                    $optParams = [
+                        'timeMin' => $timeMin,
+                        'timeMax' => $timeMax,
+                        'showDeleted' => true,
+                        'singleEvents' => true,
+                        'orderBy' => 'startTime',
+                        'maxResults' => 250 // Reasonable batch size for API
+                    ];
+                    
+                    if ($pageToken) {
+                        $optParams['pageToken'] = $pageToken;
+                    }
+                    
+                    $eventsResult = $service->events->listEvents($calendarId, $optParams);
+                    $events = $eventsResult->getItems();
+                    
+                    $this->logger->info('Retrieved batch of events', [
+                        'calendar_id' => $calendarId,
+                        'calendar_name' => $calendarName,
+                        'batch_size' => count($events)
+                    ]);
+                    
+                    // Process this batch of events
+                    foreach ($events as $event) {
+                        // Skip declined events where the user is not attending
+                        $attendees = $event->getAttendees();
+                        if ($attendees) {
+                            $userEmail = $integration->getConfig()['google_email'] ?? null;
+                            $isDeclined = false;
+                            
+                            foreach ($attendees as $attendee) {
+                                if ($attendee->getEmail() === $userEmail && $attendee->getResponseStatus() === 'declined') {
+                                    $isDeclined = true;
+                                    break;
+                                }
+                            }
+                            
+                            if ($isDeclined) {
+                                continue;
                             }
                         }
                         
-                        if ($isDeclined) {
-                            continue;
+                        // Save the event to our database
+                        $savedEvent = $this->saveEvent($integration, $user, $event, $calendarId, $calendarName);
+                        if ($savedEvent) {
+                            $savedEvents[] = $savedEvent;
+                            $calendarEventIds[] = $event->getId();
+                            $batchSize++;
                         }
                     }
                     
-                    // Save the event to our database
-                    $savedEvent = $this->saveEvent($integration, $user, $event, $calendarId, $calendarName);
-                    if ($savedEvent) {
-                        $savedEvents[] = $savedEvent;
-                        $calendarEventIds[] = $event->getId();
+                    // If we've processed enough events, flush to database
+                    if ($batchSize >= $maxBatchSize) {
+                        $this->entityManager->flush();
+                        $batchSize = 0;
+                        $this->logger->info('Flushed batch of events to database');
                     }
-                }
+                    
+                    // Get the next page token
+                    $pageToken = $eventsResult->getNextPageToken();
+                    
+                } while ($pageToken); // Continue until no more pages
                 
                 // Clean up deleted events for this calendar
-                $this->deleteEventsNotInList($user, $calendarEventIds, $calendarId);
+                $this->cleanupDeletedEvents($user, $calendarEventIds, $calendarId, $startDate, $endDate);
                 
                 // Collect all event IDs for final check
                 $allEventIds = array_merge($allEventIds, $calendarEventIds);
             }
             
+            // Flush any remaining events
+            if ($batchSize > 0) {
+                $this->entityManager->flush();
+            }
+            
             // Update last synced timestamp
             $integration->setLastSynced(new DateTime());
             $this->entityManager->persist($integration);
+            $this->entityManager->flush();
             
             // Commit the transaction
-            $this->entityManager->flush();
             $this->entityManager->commit();
             
             // Also update the user availability records
@@ -636,8 +787,6 @@ class GoogleCalendarService extends IntegrationService
             $this->logger->info('Successfully synced Google Calendar events', [
                 'integration_id' => $integration->getId(),
                 'user_id' => $user->getId(),
-                'start_date' => $startDate->format('Y-m-d'),
-                'end_date' => $endDate->format('Y-m-d'),
                 'events_count' => count($savedEvents)
             ]);
             
@@ -655,6 +804,55 @@ class GoogleCalendarService extends IntegrationService
             ]);
             
             throw new IntegrationException('Failed to sync calendar events: ' . $e->getMessage());
+        }
+    }
+
+
+    /**
+     * Clean up events that no longer exist in Google Calendar
+     */
+
+    private function cleanupDeletedEvents(UserEntity $user, array $keepEventIds, string $calendarId, DateTime $startDate, DateTime $endDate): void
+    {
+        try {
+            $filters = [
+                [
+                    'field' => 'startTime',
+                    'operator' => 'greater_than_or_equal',
+                    'value' => $startDate
+                ],
+                [
+                    'field' => 'endTime',
+                    'operator' => 'less_than_or_equal',
+                    'value' => $endDate
+                ],
+                [
+                    'field' => 'calendarId',
+                    'operator' => 'equals',
+                    'value' => $calendarId
+                ]
+            ];
+            
+            $events = $this->crudManager->findMany(
+                GoogleCalendarEventEntity::class,
+                $filters,
+                1,
+                1000,
+                ['user' => $user]
+            );
+            
+            foreach ($events as $event) {
+                if (!in_array($event->getGoogleEventId(), $keepEventIds)) {
+                    // Mark as cancelled
+                    $event->setStatus('cancelled');
+                    $this->entityManager->persist($event);
+                }
+            }
+        } catch (\Exception $e) {
+            $this->logger->error('Error cleaning up deleted events: ' . $e->getMessage(), [
+                'user_id' => $user->getId(),
+                'calendar_id' => $calendarId
+            ]);
         }
     }
 
