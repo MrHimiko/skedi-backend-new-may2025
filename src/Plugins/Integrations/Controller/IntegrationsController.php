@@ -7,11 +7,16 @@ use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\Routing\Annotation\Route;
 use Symfony\Component\HttpFoundation\Request;
 use App\Service\ResponseService;
+use App\Plugins\Integrations\Service\IntegrationService;
 use App\Plugins\Integrations\Service\GoogleCalendarService;
 use App\Plugins\Integrations\Repository\IntegrationRepository;
 use App\Plugins\Integrations\Exception\IntegrationException;
 use Psr\Log\LoggerInterface;
 use DateTime;
+
+
+
+
 
 #[Route('/api')]
 class IntegrationsController extends AbstractController
@@ -20,15 +25,19 @@ class IntegrationsController extends AbstractController
     private GoogleCalendarService $googleCalendarService;
     private IntegrationRepository $integrationRepository;
     private LoggerInterface $logger;
+    private IntegrationService $integrationService;
 
     public function __construct(
         ResponseService $responseService,
+        IntegrationService $integrationService,
         GoogleCalendarService $googleCalendarService,
         IntegrationRepository $integrationRepository,
         LoggerInterface $logger
     ) {
         $this->responseService = $responseService;
         $this->googleCalendarService = $googleCalendarService;
+        $this->integrationService = $integrationService;
+        
         $this->integrationRepository = $integrationRepository;
         $this->logger = $logger;
     }
@@ -371,16 +380,9 @@ class IntegrationsController extends AbstractController
         } catch (\Exception $e) {
             return $this->responseService->json(false, $e, null, 500);
         }
-    }
+    }   
 
 
-
-
-
-
-    /**
-     * Helper method to get Google Calendar events with filtering
-     */
     private function getGoogleCalendarEvents(
         $user, 
         DateTime $startDateTime, 
@@ -439,6 +441,7 @@ class IntegrationsController extends AbstractController
         
         return $standardizedEvents;
     }
+
 
 
 }
