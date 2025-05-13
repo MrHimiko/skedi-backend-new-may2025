@@ -15,11 +15,64 @@ use App\Plugins\Integrations\Exception\IntegrationException;
 use DateTime;
 use DateTimeInterface;
 use Psr\Log\LoggerInterface;
-
-// Microsoft Graph API libraries
-use Microsoft\Graph\Graph;
-use Microsoft\Graph\Model;
 use GuzzleHttp\Client as HttpClient;
+
+// Microsoft Graph SDK v2 imports
+use Microsoft\Graph\GraphServiceClient;
+use Microsoft\Graph\Generated\Models;
+use Microsoft\Kiota\Abstractions\Authentication\AuthenticationProvider;
+use Microsoft\Kiota\Abstractions\Authentication\AllowedHostsValidator;
+use Microsoft\Kiota\Abstractions\ApiException;
+use Microsoft\Graph\Core\GraphClientFactory;
+use Microsoft\Graph\Core\GraphConstants;
+use Microsoft\Graph\Core\Authentication\GraphPhpLeagueAuthenticationProvider;
+use Microsoft\Kiota\Authentication\Oauth\TokenRequestContext;
+use Microsoft\Kiota\Authentication\Oauth\ClientCredentialContext;
+use Microsoft\Kiota\Http\GuzzleRequestAdapter;
+use Http\Promise\Promise;
+use Http\Promise\FulfilledPromise;
+use Http\Promise\RejectedPromise;
+
+/**
+ * Custom AuthenticationProvider for existing tokens
+ */
+class DirectAuthenticationProvider implements AuthenticationProvider 
+{
+    private string $accessToken;
+    private AllowedHostsValidator $allowedHostsValidator;
+    
+    public function __construct(string $accessToken) 
+    {
+        $this->accessToken = $accessToken;
+        $this->allowedHostsValidator = new AllowedHostsValidator();
+        $this->allowedHostsValidator->setAllowedHosts([
+            "graph.microsoft.com",
+            "graph.microsoft.us",
+            "dod-graph.microsoft.us",
+            "graph.microsoft.de",
+            "microsoftgraph.chinacloudapi.cn"
+        ]);
+    }
+    
+    public function authenticateRequest(
+        \Microsoft\Kiota\Abstractions\RequestInformation $request,
+        array $additionalAuthenticationContext = []
+    ): Promise {
+        if (!$this->allowedHostsValidator->isUrlHostValid($request->getUri())) {
+            return new RejectedPromise(
+                new \InvalidArgumentException("Url host is not valid")
+            );
+        }
+        
+        $request->addHeader('Authorization', 'Bearer ' . $this->accessToken);
+        return new FulfilledPromise(null);
+    }
+    
+    public function getAllowedHostsValidator(): AllowedHostsValidator
+    {
+        return $this->allowedHostsValidator;
+    }
+}
 
 class OutlookCalendarService extends IntegrationService
 {
@@ -61,9 +114,9 @@ class OutlookCalendarService extends IntegrationService
     }
 
     /**
-     * Get Microsoft Graph instance
+     * Get Microsoft Graph instance for V2 SDK
      */
-    private function getGraphClient(IntegrationEntity $integration): Graph
+    private function getGraphClient(IntegrationEntity $integration): GraphServiceClient
     {
         if (!$integration->getAccessToken()) {
             throw new IntegrationException('No access token available');
@@ -74,10 +127,14 @@ class OutlookCalendarService extends IntegrationService
             $this->refreshToken($integration);
         }
         
-        $graph = new Graph();
-        $graph->setAccessToken($integration->getAccessToken());
+        // Create an auth provider with the access token
+        $authProvider = new DirectAuthenticationProvider($integration->getAccessToken());
         
-        return $graph;
+        // Create a request adapter with the auth provider
+        $adapter = new GuzzleRequestAdapter($authProvider);
+        
+        // Create the GraphServiceClient with the adapter using the static factory method
+        return GraphServiceClient::createWithRequestAdapter($adapter);
     }
 
     /**
@@ -132,16 +189,16 @@ class OutlookCalendarService extends IntegrationService
             $expiresAt = new DateTime();
             $expiresAt->modify("+{$expiresIn} seconds");
             
-            // Get user info from Microsoft Graph
-            $graph = new Graph();
-            $graph->setAccessToken($responseBody['access_token']);
+            // Get user info from Microsoft Graph with the obtained token
+            $accessToken = $responseBody['access_token'];
+            $authProvider = new DirectAuthenticationProvider($accessToken);
+            $adapter = new GuzzleRequestAdapter($authProvider);
+            $graphClient = GraphServiceClient::createWithRequestAdapter($adapter);
             
             $outlookUser = null;
             try {
-                $outlookUser = $graph->createRequest('GET', '/me')
-                    ->setReturnType(Model\User::class)
-                    ->execute();
-            } catch (\Exception $e) {
+                $outlookUser = $graphClient->me()->get()->wait();
+            } catch (ApiException $e) {
                 $this->logger->warning('Could not fetch Outlook user info: ' . $e->getMessage());
             }
             
@@ -342,13 +399,12 @@ class OutlookCalendarService extends IntegrationService
         try {
             $graph = $this->getGraphClient($integration);
             
-            $calendars = $graph->createRequest('GET', '/me/calendars')
-                ->setReturnType(Model\Calendar::class)
-                ->execute();
+            // Fetch calendars using the v2 SDK
+            $calendars = $graph->me()->calendars()->get()->wait();
             
             $result = [];
             
-            foreach ($calendars as $calendar) {
+            foreach ($calendars->getValue() as $calendar) {
                 $result[] = [
                     'id' => $calendar->getId(),
                     'name' => $calendar->getName(),
@@ -398,11 +454,9 @@ class OutlookCalendarService extends IntegrationService
             $timeMax = $endDate->format('c');
             
             // Get user's calendars
-            $calendars = $graph->createRequest('GET', '/me/calendars')
-                ->setReturnType(Model\Calendar::class)
-                ->execute();
+            $calendars = $graph->me()->calendars()->get()->wait();
             
-            foreach ($calendars as $calendar) {
+            foreach ($calendars->getValue() as $calendar) {
                 $calendarId = $calendar->getId();
                 $calendarName = $calendar->getName();
                 $calendarEventIds = [];
@@ -413,32 +467,42 @@ class OutlookCalendarService extends IntegrationService
                 }
                 
                 // Query for events in this calendar
-                $eventsUrl = "/me/calendars/{$calendarId}/calendarView?startDateTime={$timeMin}&endDateTime={$timeMax}";
-                $queryParams = "\$select=id,subject,bodyPreview,start,end,location,organizer,attendees,isAllDay,showAs,status";
-                
-                $events = $graph->createRequest('GET', $eventsUrl . '&' . $queryParams)
-                    ->setReturnType(Model\Event::class)
-                    ->execute();
-                
-                $this->logger->info('Retrieved Outlook events', [
-                    'calendar_id' => $calendarId,
-                    'calendar_name' => $calendarName,
-                    'count' => count($events)
-                ]);
-                
-                foreach ($events as $event) {
-                    // Skip Skedi events (implement detection criteria)
-                    if ($this->isSkediEvent($event)) {
-                        $calendarEventIds[] = $event->getId();
-                        continue;
-                    }
+                try {
+                    $queryParams = [
+                        'startDateTime' => $timeMin,
+                        'endDateTime' => $timeMax
+                    ];
                     
-                    // Save the event to our database
-                    $savedEvent = $this->saveEvent($integration, $user, $event, $calendarId, $calendarName);
-                    if ($savedEvent) {
-                        $savedEvents[] = $savedEvent;
-                        $calendarEventIds[] = $event->getId();
+                    $events = $graph->me()->calendars()->byCalendarId($calendarId)->calendarView()
+                        ->get($queryParams)->wait();
+                    
+                    $this->logger->info('Retrieved Outlook events', [
+                        'calendar_id' => $calendarId,
+                        'calendar_name' => $calendarName,
+                        'count' => count($events->getValue())
+                    ]);
+                    
+                    foreach ($events->getValue() as $event) {
+                        // Skip Skedi events (implement detection criteria)
+                        if ($this->isSkediEvent($event)) {
+                            $calendarEventIds[] = $event->getId();
+                            continue;
+                        }
+                        
+                        // Save the event to our database
+                        $savedEvent = $this->saveEvent($integration, $user, $event, $calendarId, $calendarName);
+                        if ($savedEvent) {
+                            $savedEvents[] = $savedEvent;
+                            $calendarEventIds[] = $event->getId();
+                        }
                     }
+                } catch (\Exception $calendarException) {
+                    $this->logger->error('Error fetching events for calendar: ' . $calendarException->getMessage(), [
+                        'calendar_id' => $calendarId,
+                        'calendar_name' => $calendarName
+                    ]);
+                    // Continue with next calendar
+                    continue;
                 }
                 
                 // Clean up deleted events for this calendar
@@ -477,7 +541,7 @@ class OutlookCalendarService extends IntegrationService
     private function saveEvent(
         IntegrationEntity $integration, 
         UserEntity $user, 
-        Model\Event $event, 
+        $event, // Using a generic type since this is a model from the SDK
         string $calendarId, 
         string $calendarName
     ): ?OutlookCalendarEventEntity {
@@ -698,74 +762,69 @@ class OutlookCalendarService extends IntegrationService
             // Default to primary calendar if not specified
             $calendarId = $options['calendar_id'] ?? null;
             
-            // Prepare the event
-            $event = [
-                'subject' => $title,
-                'body' => [
-                    'contentType' => 'HTML',
-                    'content' => $options['description'] ?? ''
-                ],
-                'start' => [
-                    'dateTime' => $startTime->format('Y-m-d\TH:i:s'),
-                    'timeZone' => 'UTC'
-                ],
-                'end' => [
-                    'dateTime' => $endTime->format('Y-m-d\TH:i:s'),
-                    'timeZone' => 'UTC'
-                ],
-                'isAllDay' => false
-            ];
+            // Create a new event model for v2 SDK
+            $event = new Models\Event();
+            $event->setSubject($title);
+            
+            // Set body content
+            $itemBody = new Models\ItemBody();
+            $itemBody->setContentType('HTML');
+            $itemBody->setContent($options['description'] ?? '');
+            $event->setBody($itemBody);
+            
+            // Set start and end time
+            $startDateTimeTimeZone = new Models\DateTimeTimeZone();
+            $startDateTimeTimeZone->setDateTime($startTime->format('Y-m-d\TH:i:s'));
+            $startDateTimeTimeZone->setTimeZone('UTC');
+            $event->setStart($startDateTimeTimeZone);
+            
+            $endDateTimeTimeZone = new Models\DateTimeTimeZone();
+            $endDateTimeTimeZone->setDateTime($endTime->format('Y-m-d\TH:i:s'));
+            $endDateTimeTimeZone->setTimeZone('UTC');
+            $event->setEnd($endDateTimeTimeZone);
+            
+            $event->setIsAllDay(false);
             
             // Set location if provided
             if (!empty($options['location'])) {
-                $event['location'] = [
-                    'displayName' => $options['location']
-                ];
+                $location = new Models\Location();
+                $location->setDisplayName($options['location']);
+                $event->setLocation($location);
             }
             
             // Set free/busy status (transparency)
             $transparency = $options['transparency'] ?? 'opaque'; // opaque = busy, transparent = free
-            $event['showAs'] = ($transparency === 'transparent') ? 'free' : 'busy';
+            $event->setShowAs(($transparency === 'transparent') ? 'free' : 'busy');
             
             // Add attendees if provided
             if (!empty($options['attendees']) && is_array($options['attendees'])) {
                 $attendees = [];
                 foreach ($options['attendees'] as $attendee) {
-                    $attendees[] = [
-                        'emailAddress' => [
-                            'address' => $attendee['email'],
-                            'name' => $attendee['name'] ?? $attendee['email']
-                        ],
-                        'type' => 'required'
-                    ];
+                    $attendeeObj = new Models\Attendee();
+                    $emailAddress = new Models\EmailAddress();
+                    $emailAddress->setAddress($attendee['email']);
+                    $emailAddress->setName($attendee['name'] ?? $attendee['email']);
+                    $attendeeObj->setEmailAddress($emailAddress);
+                    $attendeeObj->setType('required');
+                    $attendees[] = $attendeeObj;
                 }
-                $event['attendees'] = $attendees;
+                $event->setAttendees($attendees);
             }
             
             // Add reminder if provided
             if (!empty($options['reminders']) && is_array($options['reminders'])) {
                 $reminder = $options['reminders'][0];
-                $event['reminderMinutesBeforeStart'] = $reminder['minutes'] ?? 15;
-                $event['isReminderOn'] = true;
+                $event->setReminderMinutesBeforeStart($reminder['minutes'] ?? 15);
+                $event->setIsReminderOn(true);
             }
             
             // Create event in specific calendar or default calendar
-            $endpointUrl = $calendarId 
-                ? "/me/calendars/{$calendarId}/events" 
-                : "/me/events";
-            
-            // Add skedi property to identify our events
-            $event['singleValueExtendedProperties'] = [
-                [
-                    'id' => 'String {66f5a359-4659-4830-9070-00049ec6ac6e} Name skedi_event',
-                    'value' => 'true'
-                ]
-            ];
-            
-            $response = $graph->createRequest('POST', $endpointUrl)
-                ->attachBody($event)
-                ->setReturnType(Model\Event::class)
-                ->execute();
+            $response = null;
+            if ($calendarId) {
+                $response = $graph->me()->calendars()->byCalendarId($calendarId)->events()->post($event)->wait();
+            } else {
+                $response = $graph->me()->events()->post($event)->wait();
+            }
             
             // Update integration's last synced time
             $integration->setLastSynced(new DateTime());
@@ -795,8 +854,8 @@ class OutlookCalendarService extends IntegrationService
         try {
             $graph = $this->getGraphClient($integration);
             
-            $graph->createRequest('DELETE', "/me/events/{$eventId}")
-                ->execute();
+            // Delete event using the v2 SDK
+            $graph->me()->events()->byEventId($eventId)->delete()->wait();
             
             return true;
         } catch (\Exception $e) {
@@ -808,7 +867,7 @@ class OutlookCalendarService extends IntegrationService
     /**
      * Determine if an event is created by Skedi
      */
-    private function isSkediEvent(Model\Event $event): bool
+    private function isSkediEvent($event): bool
     {
         // Check for Skedi-specific markers in the description
         $description = $event->getBodyPreview() ?? '';
