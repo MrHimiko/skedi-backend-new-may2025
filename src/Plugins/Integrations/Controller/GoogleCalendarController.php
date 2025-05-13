@@ -188,4 +188,74 @@ class GoogleCalendarController extends AbstractController
             return $this->responseService->json(false, $e->getMessage(), null, 500);
         }
     }
+
+
+
+    /**
+     * Create a new event in Google Calendar
+     */
+    #[Route('/user/integrations/{id}/events', name: 'google_calendar_event_create#', methods: ['POST'])]
+    public function createEvent(int $id, Request $request): JsonResponse
+    {
+        $user = $request->attributes->get('user');
+        $data = $request->attributes->get('data');
+        
+        // Basic validation
+        if (empty($data['title']) || empty($data['start_time']) || empty($data['end_time'])) {
+            return $this->responseService->json(false, 'Title, start time, and end time are required', null, 400);
+        }
+        
+        try {
+            // Get the user's integration
+            $integration = $this->googleCalendarService->getUserIntegration($user, $id);
+            
+            if (!$integration) {
+                return $this->responseService->json(false, 'Google Calendar integration not found', null, 404);
+            }
+            
+            // Parse dates
+            $startTime = new DateTime($data['start_time']);
+            $endTime = new DateTime($data['end_time']);
+            
+            if ($startTime >= $endTime) {
+                return $this->responseService->json(false, 'End time must be after start time', null, 400);
+            }
+            
+            // Prepare options
+            $options = [
+                'description' => $data['description'] ?? null,
+                'location' => $data['location'] ?? null,
+                'calendar_id' => $data['calendar_id'] ?? 'primary',
+                'transparency' => $data['transparency'] ?? 'opaque'
+            ];
+            
+            // Add attendees if provided
+            if (!empty($data['attendees']) && is_array($data['attendees'])) {
+                $options['attendees'] = $data['attendees'];
+            }
+            
+            // Add reminders if provided
+            if (!empty($data['reminders']) && is_array($data['reminders'])) {
+                $options['reminders'] = $data['reminders'];
+            }
+            
+            // Create the event
+            $event = $this->googleCalendarService->createCalendarEvent(
+                $integration,
+                $data['title'],
+                $startTime,
+                $endTime,
+                $options
+            );
+            
+            return $this->responseService->json(true, 'Event created successfully', $event, 201);
+        } catch (IntegrationException $e) {
+            return $this->responseService->json(false, $e->getMessage(), null, 400);
+        } catch (\Exception $e) {
+            $this->logger->error('Error creating event: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString()
+            ]);
+            return $this->responseService->json(false, 'An error occurred: ' . $e->getMessage(), null, 500);
+        }
+    }
 }

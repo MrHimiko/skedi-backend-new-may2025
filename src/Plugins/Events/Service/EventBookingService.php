@@ -12,7 +12,11 @@ use App\Plugins\Events\Entity\EventBookingEntity;
 use App\Plugins\Events\Entity\EventGuestEntity;
 use App\Plugins\Events\Entity\ContactEntity;
 use App\Plugins\Events\Exception\EventsException;
+use App\Plugins\Integrations\Service\GoogleCalendarService;
+
 use DateTime;
+
+
 
 class EventBookingService
 {
@@ -20,17 +24,20 @@ class EventBookingService
     private EntityManagerInterface $entityManager;
     private ContactService $contactService;
     private EventScheduleService $scheduleService;
+    private GoogleCalendarService $googleCalendarService;
 
     public function __construct(
         CrudManager $crudManager,
         EntityManagerInterface $entityManager,
         ContactService $contactService,
-        EventScheduleService $scheduleService
+        EventScheduleService $scheduleService,
+        \App\Plugins\Integrations\Service\GoogleCalendarService $googleCalendarService
     ) {
         $this->crudManager = $crudManager;
         $this->entityManager = $entityManager;
         $this->contactService = $contactService;
         $this->scheduleService = $scheduleService;
+        $this->googleCalendarService = $googleCalendarService;
     }
 
     public function getMany(array $filters, int $page, int $limit, array $criteria = []): array
@@ -143,6 +150,16 @@ class EventBookingService
             
             // Create availability records for event hosts
             $this->scheduleService->handleBookingCreated($booking);
+
+            // Sync with Google Calendar if integration exists
+            try {
+                $this->googleCalendarService->syncEventBooking($booking);
+            } catch (\Exception $e) {
+                // Log but don't prevent booking creation
+                $this->entityManager->getLogger()->warning('Failed to sync with Google Calendar: ' . $e->getMessage(), [
+                    'booking_id' => $booking->getId()
+                ]);
+            }
             
             return $booking;
         } catch (\Exception $e) {

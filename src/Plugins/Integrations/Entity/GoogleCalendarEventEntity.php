@@ -19,7 +19,7 @@ class GoogleCalendarEventEntity
     #[ORM\Id]
     #[ORM\GeneratedValue]
     #[ORM\Column(type: "bigint")]
-    private int $id;
+    private ?int $id = null;
 
     #[ORM\ManyToOne(targetEntity: UserEntity::class)]
     #[ORM\JoinColumn(name: "user_id", referencedColumnName: "id", nullable: false)]
