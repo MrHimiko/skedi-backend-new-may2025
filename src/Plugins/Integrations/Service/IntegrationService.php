@@ -11,6 +11,10 @@ use App\Plugins\Account\Service\UserAvailabilityService;
 use App\Service\CrudManager;
 use DateTime;
 
+/**
+ * Base service for handling integrations with external services.
+ * Provides common functionality for all integration types.
+ */
 class IntegrationService
 {
     protected EntityManagerInterface $entityManager;

@@ -11,23 +11,19 @@ use App\Service\ResponseService;
 use App\Plugins\Integrations\Service\GoogleCalendarService;
 use App\Plugins\Integrations\Exception\IntegrationException; 
 use DateTime;
-use Psr\Log\LoggerInterface;
 
 #[Route('/api')]
 class GoogleCalendarController extends AbstractController
 {
     private ResponseService $responseService;
     private GoogleCalendarService $googleCalendarService;
-    private LoggerInterface $logger;
     
     public function __construct(
         ResponseService $responseService,
-        GoogleCalendarService $googleCalendarService,
-        LoggerInterface $logger
+        GoogleCalendarService $googleCalendarService
     ) {
         $this->responseService = $responseService;
         $this->googleCalendarService = $googleCalendarService;
-        $this->logger = $logger;
     }
     
     /**
@@ -109,63 +105,6 @@ class GoogleCalendarController extends AbstractController
     }
     
     /**
-     * Get events for a date range (from local database)
-     */
-    #[Route('/user/integrations/google/events', name: 'google_calendar_events_get#', methods: ['GET'])]
-    public function getEvents(Request $request): JsonResponse
-    {
-        $user = $request->attributes->get('user');
-        $startDate = $request->query->get('start_date', 'today');
-        $endDate = $request->query->get('end_date', '+7 days');
-        $autoSync = $request->query->get('sync', 'auto'); // Add this parameter
-        
-        try {
-            $startDateTime = new DateTime($startDate);
-            $endDateTime = new DateTime($endDate);
-            
-            // Get the user's integration
-            $integration = $this->googleCalendarService->getUserIntegration($user);
-            
-            if (!$integration) {
-                return $this->responseService->json(false, 'Google Calendar integration not found. Please connect your calendar first.', null, 404);
-            }
-            
-            // Add auto-sync logic
-            $shouldSync = false;
-            if ($autoSync === 'force') {
-                $shouldSync = true;
-            } else if ($autoSync === 'auto') {
-                $shouldSync = !$integration->getLastSynced() || 
-                             $integration->getLastSynced() < new DateTime('-30 minutes');
-            }
-            
-            if ($shouldSync) {
-                $this->googleCalendarService->syncEvents($integration, $startDateTime, $endDateTime);
-            }
-            
-            $events = $this->googleCalendarService->getEventsForDateRange($user, $startDateTime, $endDateTime);
-            
-            $result = array_map(function($event) {
-                return $event->toArray();
-            }, $events);
-            
-            return $this->responseService->json(true, 'retrieve', [
-                'events' => $result,
-                'metadata' => [
-                    'total' => count($result),
-                    'start_date' => $startDateTime->format('Y-m-d H:i:s'),
-                    'end_date' => $endDateTime->format('Y-m-d H:i:s'),
-                    'last_synced' => $integration->getLastSynced() ? 
-                        $integration->getLastSynced()->format('Y-m-d H:i:s') : null,
-                    'synced_now' => $shouldSync
-                ]
-            ]);
-        } catch (\Exception $e) {
-            return $this->responseService->json(false, $e->getMessage(), null, 500);
-        }
-    }
-    
-    /**
      * Get calendars from Google account
      */
     #[Route('/user/integrations/google/calendars', name: 'google_calendars_get#', methods: ['GET'])]
@@ -188,8 +127,6 @@ class GoogleCalendarController extends AbstractController
             return $this->responseService->json(false, $e->getMessage(), null, 500);
         }
     }
-
-
 
     /**
      * Create a new event in Google Calendar
@@ -252,9 +189,6 @@ class GoogleCalendarController extends AbstractController
         } catch (IntegrationException $e) {
             return $this->responseService->json(false, $e->getMessage(), null, 400);
         } catch (\Exception $e) {
-            $this->logger->error('Error creating event: ' . $e->getMessage(), [
-                'trace' => $e->getTraceAsString()
-            ]);
             return $this->responseService->json(false, 'An error occurred: ' . $e->getMessage(), null, 500);
         }
     }

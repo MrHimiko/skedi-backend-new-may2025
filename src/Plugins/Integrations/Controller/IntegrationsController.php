@@ -9,37 +9,31 @@ use Symfony\Component\HttpFoundation\Request;
 use App\Service\ResponseService;
 use App\Plugins\Integrations\Service\IntegrationService;
 use App\Plugins\Integrations\Service\GoogleCalendarService;
-use App\Plugins\Integrations\Repository\IntegrationRepository;
+use App\Plugins\Integrations\Service\OutlookCalendarService;
 use App\Plugins\Integrations\Exception\IntegrationException;
-use Psr\Log\LoggerInterface;
+use App\Plugins\Integrations\Repository\IntegrationRepository;
 use DateTime;
-
-
-
-
 
 #[Route('/api')]
 class IntegrationsController extends AbstractController
 {
     private ResponseService $responseService;
     private GoogleCalendarService $googleCalendarService;
-    private IntegrationRepository $integrationRepository;
-    private LoggerInterface $logger;
     private IntegrationService $integrationService;
+    private OutlookCalendarService $outlookCalendarService;
+
 
     public function __construct(
         ResponseService $responseService,
         IntegrationService $integrationService,
         GoogleCalendarService $googleCalendarService,
+        OutlookCalendarService $outlookCalendarService,
         IntegrationRepository $integrationRepository,
-        LoggerInterface $logger
     ) {
         $this->responseService = $responseService;
         $this->googleCalendarService = $googleCalendarService;
         $this->integrationService = $integrationService;
-        
-        $this->integrationRepository = $integrationRepository;
-        $this->logger = $logger;
+        $this->outlookCalendarService = $outlookCalendarService;
     }
     
     /**
@@ -48,8 +42,6 @@ class IntegrationsController extends AbstractController
     #[Route('/user/integrations/providers', name: 'integrations_providers#', methods: ['GET'])]
     public function getProviders(Request $request): JsonResponse
     {
-        $user = $request->attributes->get('user');
-        
         try {
             $providers = $this->integrationService->getAvailableProviders();
             
@@ -108,8 +100,9 @@ class IntegrationsController extends AbstractController
         }
     }
 
-    
-
+    /**
+     * Get events from all integrations
+     */
     #[Route('/user/integrations/events', name: 'integration_events_get#', methods: ['GET'])]
     public function getEvents(Request $request): JsonResponse
     {
@@ -140,29 +133,18 @@ class IntegrationsController extends AbstractController
                     case 'upcoming':
                         $startDateTime = $now;
                         break;
-                    case 'current':
-                        // Events happening now (started but not ended)
-                        // We'll handle this in the query filtering
-                        break;
                 }
             }
             
-            // Get all active integrations for the user
-            $criteria = ['user' => $user, 'status' => 'active'];
-            
-            // Filter by provider if specified
-            if ($source) {
-                $criteria['provider'] = $source;
-            }
-            
-            $integrations = $this->integrationRepository->findBy($criteria);
+            // Get active integrations for the user
+            $integrations = $this->integrationService->getUserIntegrations($user, $source);
             
             if (empty($integrations)) {
                 return $this->responseService->json(true, 'No connected integrations found.', [
                     'events' => [],
                     'pagination' => [
                         'current_page' => $page,
-                        'total_pages' => 0, 
+                        'total_pages' => 0,
                         'total_items' => 0,
                         'page_size' => $limit
                     ],
@@ -220,21 +202,29 @@ class IntegrationsController extends AbstractController
                             $allEvents = array_merge($allEvents, $events);
                             $metadata['providers'][$provider]['count'] = count($events);
                             break;
+                        case 'outlook_calendar':
+                            // Sync if needed
+                            if ($shouldSync) {
+                                $this->outlookCalendarService->syncEvents($integration, $startDateTime, $endDateTime);
+                                $metadata['providers'][$provider]['synced_now'] = true;
+                            }
                             
-                        // Add cases for other providers as they are implemented
-                        default:
-                            $this->logger->warning('Unsupported provider type', [
-                                'provider' => $provider,
-                                'integration_id' => $integration->getId()
-                            ]);
+                            // Get events from database based on specified filters
+                            $events = $this->getOutlookCalendarEvents(
+                                $user, 
+                                $startDateTime, 
+                                $endDateTime, 
+                                $status,
+                                $timeRange
+                            );
+                            
+                            $allEvents = array_merge($allEvents, $events);
+                            $metadata['providers'][$provider]['count'] = count($events);
                             break;
+            
+                        // Add cases for other providers as implemented
                     }
                 } catch (\Exception $e) {
-                    $this->logger->error('Error fetching events for provider: ' . $e->getMessage(), [
-                        'provider' => $provider,
-                        'integration_id' => $integration->getId()
-                    ]);
-                    
                     $metadata['providers'][$provider]['error'] = $e->getMessage();
                 }
             }
@@ -265,14 +255,13 @@ class IntegrationsController extends AbstractController
         } catch (IntegrationException $e) {
             return $this->responseService->json(false, $e->getMessage(), null, 400);
         } catch (\Exception $e) {
-            $this->logger->error('Error fetching integration events: ' . $e->getMessage(), [
-                'trace' => $e->getTraceAsString()
-            ]);
-            return $this->responseService->json(false, $e, null, 500);
+            return $this->responseService->json(false, $e->getMessage(), null, 500);
         }
     }
 
-
+    /**
+     * Get events for a specific integration
+     */
     #[Route('/user/integrations/{id}/events', name: 'integration_events_by_id_get#', methods: ['GET'], requirements: ['id' => '\d+'])]
     public function getEventsByIntegration(int $id, Request $request): JsonResponse
     {
@@ -289,9 +278,9 @@ class IntegrationsController extends AbstractController
         
         try {
             // Find the integration
-            $integration = $this->integrationRepository->find($id);
+            $integration = $this->integrationService->getIntegration($id, $user);
             
-            if (!$integration || $integration->getUser()->getId() !== $user->getId() || $integration->getStatus() !== 'active') {
+            if (!$integration || $integration->getStatus() !== 'active') {
                 return $this->responseService->json(false, 'Integration not found', null, 404);
             }
             
@@ -378,11 +367,13 @@ class IntegrationsController extends AbstractController
         } catch (IntegrationException $e) {
             return $this->responseService->json(false, $e->getMessage(), null, 400);
         } catch (\Exception $e) {
-            return $this->responseService->json(false, $e, null, 500);
+            return $this->responseService->json(false, $e->getMessage(), null, 500);
         }
-    }   
+    }
 
-
+    /**
+     * Convert Google Calendar events to a standardized format
+     */
     private function getGoogleCalendarEvents(
         $user, 
         DateTime $startDateTime, 
@@ -442,6 +433,66 @@ class IntegrationsController extends AbstractController
         return $standardizedEvents;
     }
 
+
+
+    private function getOutlookCalendarEvents(
+        $user, 
+        DateTime $startDateTime, 
+        DateTime $endDateTime, 
+        string $status = 'all',
+        ?string $timeRange = null
+    ): array {
+        // Get events from database
+        $outlookEvents = $this->outlookCalendarService->getEventsForDateRange($user, $startDateTime, $endDateTime);
+        
+        $now = new DateTime();
+        $standardizedEvents = [];
+        
+        foreach ($outlookEvents as $event) {
+            // Skip based on status filter
+            if ($status !== 'all') {
+                if ($status === 'confirmed' && $event->getStatus() !== 'confirmed') {
+                    continue;
+                }
+                if ($status === 'cancelled' && $event->getStatus() !== 'cancelled') {
+                    continue;
+                }
+            }
+            
+            // Apply time range filter for 'current' events
+            if ($timeRange === 'current') {
+                $eventStart = $event->getStartTime();
+                $eventEnd = $event->getEndTime();
+                
+                // Only include events that are currently happening
+                if (!($eventStart <= $now && $eventEnd >= $now)) {
+                    continue;
+                }
+            }
+            
+            // Add to results
+            $standardizedEvents[] = [
+                'id' => $event->getId(),
+                'source' => 'outlook_calendar',
+                'source_id' => $event->getOutlookEventId(),
+                'title' => $event->getTitle(),
+                'description' => $event->getDescription(),
+                'start_time' => $event->getStartTime()->format('Y-m-d H:i:s'),
+                'end_time' => $event->getEndTime()->format('Y-m-d H:i:s'),
+                'location' => $event->getLocation(),
+                'is_all_day' => $event->isAllDay(),
+                'status' => $event->getStatus(),
+                'calendar_id' => $event->getCalendarId(),
+                'calendar_name' => $event->getCalendarName(),
+                'is_busy' => $event->isBusy(),
+                'web_link' => $event->getWebLink(),
+                'created' => $event->getCreated()->format('Y-m-d H:i:s'),
+                'updated' => $event->getUpdated()->format('Y-m-d H:i:s')
+            ];
+        }
+        
+        return $standardizedEvents;
+    }
 
 
 }

@@ -41,11 +41,10 @@ class GoogleCalendarService extends IntegrationService
         
         $this->logger = $logger;
         
-        // Try to get the parameters and log them
+        // Try to get the parameters
         try {
             $this->clientId = $parameterBag->get('google.client_id');
         } catch (\Exception $e) {
-            $this->logger->error("Error getting google.client_id: " . $e->getMessage());
             // Temporary fallback for testing
             $this->clientId = '263415563843-iisvu1oericu0v5mvc7bl2c1p3obq2mq.apps.googleusercontent.com';
         }
@@ -53,7 +52,6 @@ class GoogleCalendarService extends IntegrationService
         try {
             $this->clientSecret = $parameterBag->get('google.client_secret');
         } catch (\Exception $e) {
-            $this->logger->error("Error getting google.client_secret: " . $e->getMessage());
             // Temporary fallback
             $this->clientSecret = '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';
         }
@@ -61,7 +59,6 @@ class GoogleCalendarService extends IntegrationService
         try {
             $this->redirectUri = $parameterBag->get('google.redirect_uri');
         } catch (\Exception $e) {
-            $this->logger->error("Error getting google.redirect_uri: " . $e->getMessage());
             // Temporary fallback
             $this->redirectUri = 'https://app.skedi.com/oauth/google/callback';
         }
@@ -78,13 +75,6 @@ class GoogleCalendarService extends IntegrationService
         $clientId = '263415563843-iisvu1oericu0v5mvc7bl2c1p3obq2mq.apps.googleusercontent.com';
         $clientSecret = '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';
         $redirectUri = 'https://app.skedi.com/oauth/google/callback';
-        
-        // Log what we're setting
-        $this->logger->info('Setting Google client credentials', [
-            'client_id_length' => strlen($clientId),
-            'client_secret_length' => strlen($clientSecret),
-            'redirect_uri' => $redirectUri
-        ]);
         
         // Set client parameters
         $client->setClientId($clientId);
@@ -142,9 +132,6 @@ class GoogleCalendarService extends IntegrationService
         
         return $client->createAuthUrl();
     }
-
-
-
 
     /**
      * Handle OAuth callback and exchange code for tokens
@@ -211,10 +198,7 @@ class GoogleCalendarService extends IntegrationService
                 $googleEmail = $userInfo->getEmail();
                 $googleUserId = $userInfo->getId();
             } catch (\Exception $e) {
-                // Log error but continue
-                $this->logger->warning('Could not fetch Google account info, continuing anyway', [
-                    'error' => $e->getMessage()
-                ]);
+                // Continue without email/user info
             }
             
             // Use Google email if available, otherwise fall back to user's system email
@@ -313,18 +297,8 @@ class GoogleCalendarService extends IntegrationService
                 
                 // Then sync future events
                 $this->syncEvents($integration, $startDate, $endDate);
-                
-                $this->logger->info('Initial calendar sync completed successfully', [
-                    'integration_id' => $integration->getId(),
-                    'user_id' => $user->getId()
-                ]);
             } catch (\Exception $e) {
-                // Log but don't fail the auth process
-                $this->logger->warning('Initial calendar sync failed, but continuing', [
-                    'error' => $e->getMessage(),
-                    'integration_id' => $integration->getId(),
-                    'user_id' => $user->getId()
-                ]);
+                // Continue without failing the auth process
             }
             
             return $integration;
@@ -334,7 +308,6 @@ class GoogleCalendarService extends IntegrationService
             throw new IntegrationException('Failed to authenticate with Google: ' . $e->getMessage());
         }
     }
-
 
     /**
      * Refresh token
@@ -353,11 +326,6 @@ class GoogleCalendarService extends IntegrationService
             $accessToken = $client->fetchAccessTokenWithRefreshToken($integration->getRefreshToken());
             
             if (isset($accessToken['error'])) {
-                $this->logger->error('Failed to refresh token', [
-                    'error' => $accessToken['error'],
-                    'integration_id' => $integration->getId(),
-                    'user_id' => $integration->getUser()->getId()
-                ]);
                 throw new IntegrationException('Failed to refresh token: ' . $accessToken['error']);
             }
             
@@ -377,10 +345,6 @@ class GoogleCalendarService extends IntegrationService
             $this->entityManager->persist($integration);
             $this->entityManager->flush();
         } catch (\Exception $e) {
-            $this->logger->error('Error refreshing token: ' . $e->getMessage(), [
-                'integration_id' => $integration->getId(),
-                'user_id' => $integration->getUser()->getId()
-            ]);
             throw new IntegrationException('Failed to refresh token: ' . $e->getMessage());
         }
     }
@@ -448,10 +412,6 @@ class GoogleCalendarService extends IntegrationService
             
             return $calendars;
         } catch (\Exception $e) {
-            $this->logger->error('Error fetching calendars: ' . $e->getMessage(), [
-                'integration_id' => $integration->getId(),
-                'user_id' => $integration->getUser()->getId()
-            ]);
             throw new IntegrationException('Failed to fetch calendars: ' . $e->getMessage());
         }
     }
@@ -493,7 +453,7 @@ class GoogleCalendarService extends IntegrationService
                 $startTime = new DateTime($start->date, new \DateTimeZone('UTC'));
                 $endTime = new DateTime($end->date, new \DateTimeZone('UTC'));
             } else {
-                // Timed event - IMPORTANT: Explicitly convert to UTC
+                // Timed event - convert to UTC
                 $startDateTime = $start->dateTime;
                 $endDateTime = $end->dateTime;
                 
@@ -567,16 +527,9 @@ class GoogleCalendarService extends IntegrationService
                 return $newEvent;
             }
         } catch (\Exception $e) {
-            $this->logger->error('Error saving event: ' . $e->getMessage(), [
-                'event_id' => $event->getId(),
-                'calendar_id' => $calendarId,
-                'user_id' => $user->getId()
-            ]);
-            
             return null;
         }
     }
-
 
     /**
      * Get events for a user within a date range using CrudManager
@@ -613,17 +566,12 @@ class GoogleCalendarService extends IntegrationService
                 }
             );
         } catch (CrudException $e) {
-            $this->logger->error('Error getting events: ' . $e->getMessage(), [
-                'user_id' => $user->getId()
-            ]);
             return [];
         }
     }
 
     /**
      * Delete events not in a list of IDs
-     * Since CrudManager doesn't directly support this operation,
-     * we'll use EntityManager but keep it in the service
      */
     public function deleteEventsNotInList(UserEntity $user, array $keepEventIds, string $calendarId = null): int
     {
@@ -646,9 +594,6 @@ class GoogleCalendarService extends IntegrationService
             
             return $qb->getQuery()->execute();
         } catch (\Exception $e) {
-            $this->logger->error('Error deleting events: ' . $e->getMessage(), [
-                'user_id' => $user->getId()
-            ]);
             return 0;
         }
     }
@@ -682,13 +627,6 @@ class GoogleCalendarService extends IntegrationService
             $this->entityManager->beginTransaction();
             $batchSize = 0;
             $maxBatchSize = 100; // Process this many events before flushing
-            
-            $this->logger->info('Starting Google Calendar sync', [
-                'integration_id' => $integration->getId(),
-                'user_id' => $user->getId(),
-                'start_date' => $startDate->format('Y-m-d'),
-                'end_date' => $endDate->format('Y-m-d')
-            ]);
             
             // Loop through each calendar
             foreach ($calendarList->getItems() as $calendarListEntry) {
@@ -724,12 +662,6 @@ class GoogleCalendarService extends IntegrationService
                     $eventsResult = $service->events->listEvents($calendarId, $optParams);
                     $events = $eventsResult->getItems();
                     
-                    $this->logger->info('Retrieved batch of events', [
-                        'calendar_id' => $calendarId,
-                        'calendar_name' => $calendarName,
-                        'batch_size' => count($events)
-                    ]);
-                    
                     // Process this batch of events
                     foreach ($events as $event) {
                         // Skip declined events where the user is not attending
@@ -750,13 +682,8 @@ class GoogleCalendarService extends IntegrationService
                             }
                         }
                         
-                        // IMPORTANT: Skip events created by our application
+                        // Skip events created by our application
                         if ($this->isSkediEvent($event)) {
-                            $this->logger->info('Skipping Skedi event during sync', [
-                                'event_id' => $event->getId(),
-                                'title' => $event->getSummary()
-                            ]);
-                            
                             // Still add this ID to our list of seen events to prevent deletion
                             $calendarEventIds[] = $event->getId();
                             continue;
@@ -775,7 +702,6 @@ class GoogleCalendarService extends IntegrationService
                     if ($batchSize >= $maxBatchSize) {
                         $this->entityManager->flush();
                         $batchSize = 0;
-                        $this->logger->info('Flushed batch of events to database');
                     }
                     
                     // Get the next page token
@@ -806,24 +732,12 @@ class GoogleCalendarService extends IntegrationService
             // Also update the user availability records
             $this->syncUserAvailability($user, $savedEvents);
             
-            $this->logger->info('Successfully synced Google Calendar events', [
-                'integration_id' => $integration->getId(),
-                'user_id' => $user->getId(),
-                'events_count' => count($savedEvents)
-            ]);
-            
             return $savedEvents;
         } catch (\Exception $e) {
             // Rollback transaction on error
             if ($this->entityManager->getConnection()->isTransactionActive()) {
                 $this->entityManager->rollback();
             }
-            
-            $this->logger->error('Error syncing events: ' . $e->getMessage(), [
-                'integration_id' => $integration->getId(),
-                'user_id' => $integration->getUser()->getId(),
-                'trace' => $e->getTraceAsString()
-            ]);
             
             throw new IntegrationException('Failed to sync calendar events: ' . $e->getMessage());
         }
@@ -832,7 +746,6 @@ class GoogleCalendarService extends IntegrationService
     /**
      * Clean up events that no longer exist in Google Calendar
      */
-
     private function cleanupDeletedEvents(UserEntity $user, array $keepEventIds, string $calendarId, DateTime $startDate, DateTime $endDate): void
     {
         try {
@@ -870,10 +783,7 @@ class GoogleCalendarService extends IntegrationService
                 }
             }
         } catch (\Exception $e) {
-            $this->logger->error('Error cleaning up deleted events: ' . $e->getMessage(), [
-                'user_id' => $user->getId(),
-                'calendar_id' => $calendarId
-            ]);
+            // Just continue
         }
     }
 
@@ -905,25 +815,12 @@ class GoogleCalendarService extends IntegrationService
                 );
             }
         } catch (\Exception $e) {
-            // Log error but continue
-            $this->logger->error('Error syncing user availability: ' . $e->getMessage(), [
-                'user_id' => $user->getId()
-            ]);
+            // Just continue
         }
     }
 
-
-
     /**
      * Create an event in Google Calendar
-     *
-     * @param IntegrationEntity $integration The user's Google Calendar integration
-     * @param string $title Event title
-     * @param DateTimeInterface $startTime Event start time (in UTC)
-     * @param DateTimeInterface $endTime Event end time (in UTC)
-     * @param array $options Additional event options (description, location, etc.)
-     * @return array Event data including Google Calendar event ID
-     * @throws IntegrationException
      */
     public function createCalendarEvent(
         IntegrationEntity $integration,
@@ -1033,16 +930,6 @@ class GoogleCalendarService extends IntegrationService
             $this->entityManager->persist($integration);
             $this->entityManager->flush();
             
-            // IMPORTANT: Don't save this event to our own database since it's our own event
-            // We only want to store external events in our database
-            
-            // Log success
-            $this->logger->info('Created Google Calendar event', [
-                'integration_id' => $integration->getId(),
-                'user_id' => $user->getId(),
-                'event_id' => $createdEvent->getId()
-            ]);
-            
             // Return event data
             return [
                 'google_event_id' => $createdEvent->getId(),
@@ -1053,297 +940,100 @@ class GoogleCalendarService extends IntegrationService
                 'end_time' => $endTime->format('Y-m-d H:i:s')
             ];
         } catch (\Exception $e) {
-            $this->logger->error('Error creating Google Calendar event: ' . $e->getMessage(), [
-                'integration_id' => $integration->getId(),
-                'user_id' => $integration->getUser()->getId(),
-                'trace' => $e->getTraceAsString()
-            ]);
-            
             throw new IntegrationException('Failed to create Google Calendar event: ' . $e->getMessage());
         }
     }
 
-
-
     /**
      * Delete events in Google Calendar for a cancelled booking
      */
-
-/**
- * Delete events in Google Calendar for a cancelled booking
- */
-public function deleteEventForCancelledBooking(IntegrationEntity $integration, \App\Plugins\Events\Entity\EventBookingEntity $booking): bool
-{
-    // Start with an array to collect all debug messages
-    $debug = [];
-    $debug[] = "DEBUG: Starting Google Calendar event deletion";
-    $debug[] = "Booking ID: " . $booking->getId();
-    $debug[] = "Event Name: " . $booking->getEvent()->getName();
-    $debug[] = "Start Time: " . $booking->getStartTime()->format('Y-m-d H:i:s e');
-    $debug[] = "End Time: " . $booking->getEndTime()->format('Y-m-d H:i:s e');
-    
-    try {
-        $user = $integration->getUser();
-        $client = $this->getGoogleClient($integration);
-        
-        // Check if token needs refresh
-        if ($integration->getTokenExpires() && $integration->getTokenExpires() < new DateTime()) {
-            $debug[] = "Refreshing token before deletion";
-            $this->refreshToken($integration, $client);
-        }
-        
-        $service = new GoogleCalendar($client);
-        $event = $booking->getEvent();
-        $title = $event->getName();
-        
-        // Get all calendars for this user
-        $calendarList = $service->calendarList->listCalendarList();
-        $deletedCount = 0;
-        
-        // Get the event title for searching
-        $eventTitle = $event->getName();
-        
-        foreach ($calendarList->getItems() as $calendarListEntry) {
-            $calendarId = $calendarListEntry->getId();
-            $calendarName = $calendarListEntry->getSummary() ?? 'Unknown';
-            
-            // Only process primary calendar and selected calendars
-            $isPrimary = $calendarListEntry->getPrimary() ?? false;
-            $isSelected = $calendarListEntry->getSelected() ?? false;
-            
-            $debug[] = "Calendar: $calendarName (ID: $calendarId) - Primary: " . ($isPrimary ? 'Yes' : 'No') . 
-                     ", Selected: " . ($isSelected ? 'Yes' : 'No');
-            
-            if (!$isPrimary && !$isSelected) {
-                $debug[] = "Skipping calendar - not primary or selected";
-                continue;
-            }
-            
-            // Search for events that match this booking's time and title
-            $startTime = clone $booking->getStartTime();
-            $endTime = clone $booking->getEndTime();
-            
-            // Add a buffer to handle slight time differences
-            $startSearchBuffer = clone $startTime;
-            $startSearchBuffer->modify('-5 minutes');
-            $endSearchBuffer = clone $endTime;
-            $endSearchBuffer->modify('+5 minutes');
-            
-            $debug[] = "Searching for events between " . $startSearchBuffer->format('Y-m-d H:i:s e') . 
-                     " and " . $endSearchBuffer->format('Y-m-d H:i:s e') . " with title '$eventTitle'";
-            
-            $optParams = [
-                'timeMin' => $startSearchBuffer->format('c'),
-                'timeMax' => $endSearchBuffer->format('c'),
-                'q' => $eventTitle,
-                'singleEvents' => true
-            ];
-            
-            try {
-                $eventsResult = $service->events->listEvents($calendarId, $optParams);
-                $events = $eventsResult->getItems();
-                
-                $debug[] = "Found " . count($events) . " matching events";
-                
-                foreach ($events as $googleEvent) {
-                    $debug[] = "Google Event: ID=" . $googleEvent->getId() . 
-                         ", Title='" . $googleEvent->getSummary() . "'";
-                    
-                    if (!$googleEvent->getStart() || !$googleEvent->getEnd()) {
-                        $debug[] = "Skipping event without start/end time";
-                        continue;
-                    }
-                    
-                    // Delete the events that match
-                    if ($googleEvent->getStart()->dateTime) { // Only timed events
-                        try {
-                            $debug[] = "Attempting to delete event " . $googleEvent->getId() . 
-                                 " from calendar " . $calendarId;
-                            
-                            $service->events->delete($calendarId, $googleEvent->getId());
-                            $deletedCount++;
-                            
-                            $debug[] = "Successfully deleted event";
-                        } catch (\Exception $e) {
-                            $debug[] = "Failed to delete event: " . $e->getMessage();
-                        }
-                    } else {
-                        $debug[] = "Skipping all-day event";
-                    }
-                }
-                
-            } catch (\Exception $e) {
-                $debug[] = "Error searching calendar: " . $e->getMessage();
-            }
-        }
-        
-        $debug[] = "Deletion complete. Deleted $deletedCount events.";
-        
-        // Output all debug messages and exit
-        header('Content-Type: application/json');
-        echo json_encode([
-            'success' => true,
-            'debug_info' => $debug,
-            'deleted_count' => $deletedCount
-        ], JSON_PRETTY_PRINT);
-        exit();
-        
-        // This won't be reached due to exit()
-        return $deletedCount > 0;
-    } catch (\Exception $e) {
-        $debug[] = "ERROR: " . $e->getMessage();
-        $debug[] = "Stack trace: " . $e->getTraceAsString();
-        
-        // Output error debug messages and exit
-        header('Content-Type: application/json');
-        echo json_encode([
-            'success' => false,
-            'debug_info' => $debug,
-            'error' => $e->getMessage()
-        ], JSON_PRETTY_PRINT);
-        exit();
-        
-        // This won't be reached due to exit()
-        return false;
-    }
-}
-
-
-    /**
-     * Sync a Skedi event booking to Google Calendar
-     */
-    public function syncEventBooking(
-        \App\Plugins\Events\Entity\EventBookingEntity $booking, 
-        ?\App\Plugins\Account\Entity\UserEntity $specificUser = null
-    ): array {
-        $results = [
-            'success' => 0,
-            'failure' => 0,
-            'skipped' => 0
-        ];
-        
+    public function deleteEventForCancelledBooking(IntegrationEntity $integration, \App\Plugins\Events\Entity\EventBookingEntity $booking): bool
+    {
         try {
+            $user = $integration->getUser();
+            $client = $this->getGoogleClient($integration);
+            
+            // Check if token needs refresh
+            if ($integration->getTokenExpires() && $integration->getTokenExpires() < new DateTime()) {
+                $this->refreshToken($integration, $client);
+            }
+            
+            $service = new GoogleCalendar($client);
             $event = $booking->getEvent();
             $title = $event->getName();
             
-            // Format description with booking details
-            $description = "Booking for: {$title}\n";
+            // Get all calendars for this user
+            $calendarList = $service->calendarList->listCalendarList();
+            $deletedCount = 0;
             
-            // Add booking form data if available
-            $formData = $booking->getFormDataAsArray();
-            if ($formData) {
-                $description .= "\nBooking details:\n";
-                foreach ($formData as $key => $value) {
-                    if (is_scalar($value)) {
-                        $description .= "- " . ucfirst(str_replace('_', ' ', $key)) . ": " . 
-                            (is_string($value) ? $value : json_encode($value)) . "\n";
-                    }
+            // Get the event title for searching
+            $eventTitle = $event->getName();
+            
+            foreach ($calendarList->getItems() as $calendarListEntry) {
+                $calendarId = $calendarListEntry->getId();
+                
+                // Only process primary calendar and selected calendars
+                $isPrimary = $calendarListEntry->getPrimary() ?? false;
+                $isSelected = $calendarListEntry->getSelected() ?? false;
+                
+                if (!$isPrimary && !$isSelected) {
+                    continue;
                 }
-            }
-            
-            // Get all assignees for this event
-            $criteria = ['event' => $event];
-            if ($specificUser) {
-                $criteria['user'] = $specificUser;
-            }
-            
-            $assignees = $this->crudManager->findMany(
-                'App\Plugins\Events\Entity\EventAssigneeEntity',
-                [],
-                1,
-                1000,
-                $criteria
-            );
-            
-            // Prepare attendees from booking guests
-            $attendees = [];
-            $guests = $this->crudManager->findMany(
-                'App\Plugins\Events\Entity\EventGuestEntity',
-                [],
-                1,
-                100,
-                ['booking' => $booking]
-            );
-            
-            foreach ($guests as $guest) {
-                $attendees[] = [
-                    'email' => $guest->getEmail(),
-                    'name' => $guest->getName()
+                
+                // Search for events that match this booking's time and title
+                $startTime = clone $booking->getStartTime();
+                $endTime = clone $booking->getEndTime();
+                
+                // Add a buffer to handle slight time differences
+                $startSearchBuffer = clone $startTime;
+                $startSearchBuffer->modify('-5 minutes');
+                $endSearchBuffer = clone $endTime;
+                $endSearchBuffer->modify('+5 minutes');
+                
+                $optParams = [
+                    'timeMin' => $startSearchBuffer->format('c'),
+                    'timeMax' => $endSearchBuffer->format('c'),
+                    'q' => $eventTitle,
+                    'singleEvents' => true
                 ];
-            }
-            
-            // Process each assignee
-            foreach ($assignees as $assignee) {
-                $user = $assignee->getUser();
-                
-                // Get active Google Calendar integrations for this user
-                $integrations = $this->crudManager->findMany(
-                    'App\Plugins\Integrations\Entity\IntegrationEntity',
-                    [],
-                    1,
-                    10,
-                    [
-                        'user' => $user,
-                        'provider' => 'google_calendar',
-                        'status' => 'active'
-                    ]
-                );
-                
-                if (empty($integrations)) {
-                    $results['skipped']++;
-                    continue; // Skip users without integrations
-                }
-                
-                // Use the first active integration
-                $integration = $integrations[0];
                 
                 try {
-                    // Create the event in Google Calendar and get back the result
-                    $createdEvent = $this->createCalendarEvent(
-                        $integration,
-                        $title,
-                        $booking->getStartTime(),
-                        $booking->getEndTime(),
-                        [
-                            'description' => $description,
-                            'attendees' => $attendees,
-                            'source_id' => 'booking_' . $booking->getId()
-                        ]
-                    );
+                    $eventsResult = $service->events->listEvents($calendarId, $optParams);
+                    $events = $eventsResult->getItems();
                     
-                    // Make sure the entity is persisted and flushed before using its ID
-                    $this->entityManager->flush();
+                    foreach ($events as $googleEvent) {
+                        if (!$googleEvent->getStart() || !$googleEvent->getEnd()) {
+                            continue;
+                        }
+                        
+                        // Delete the events that match
+                        if ($googleEvent->getStart()->dateTime) { // Only timed events
+                            try {
+                                $service->events->delete($calendarId, $googleEvent->getId());
+                                $deletedCount++;
+                            } catch (\Exception $e) {
+                                // Continue
+                            }
+                        }
+                    }
                     
-                    $results['success']++;
                 } catch (\Exception $e) {
-                    // Log but don't fail the whole process
-                    $this->logger->error('Failed to create Google Calendar event for user: ' . $e->getMessage(), [
-                        'user_id' => $user->getId(),
-                        'integration_id' => $integration->getId(),
-                        'booking_id' => $booking->getId()
-                    ]);
-                    
-                    $results['failure']++;
+                    // Continue to next calendar
                 }
             }
             
-            return $results;
+            return $deletedCount > 0;
         } catch (\Exception $e) {
-            $this->logger->error('Error handling event booking for Google Calendar sync: ' . $e->getMessage(), [
-                'booking_id' => $booking->getId(),
-                'event_id' => $booking->getEvent()->getId()
-            ]);
-            
-            return $results;
+            return false;
         }
-    }   
+    }
 
-
+    
 
     /**
      * Delete all Google Calendar events for a cancelled booking
      */
-    public function deleteGoogleEventsForBooking(EventBookingEntity $booking): void
+    public function deleteGoogleEventsForBooking(\App\Plugins\Events\Entity\EventBookingEntity $booking): void
     {
         try {
             // Get all assignees for this event
@@ -1366,17 +1056,12 @@ public function deleteEventForCancelledBooking(IntegrationEntity $integration, \
                         // Delete the event from Google Calendar
                         $this->deleteEventForCancelledBooking($integration, $booking);
                     } catch (\Exception $e) {
-                        $this->logger->error('Failed to delete Google Calendar event: ' . $e->getMessage(), [
-                            'booking_id' => $booking->getId(),
-                            'user_id' => $user->getId()
-                        ]);
+                        // Continue to the next integration
                     }
                 }
             }
         } catch (\Exception $e) {
-            $this->logger->error('Error deleting Google Calendar events: ' . $e->getMessage(), [
-                'booking_id' => $booking->getId()
-            ]);
+            // Just continue
         }
     }
 
@@ -1460,34 +1145,21 @@ public function deleteEventForCancelledBooking(IntegrationEntity $integration, \
                                 // Delete the event
                                 $service->events->delete($calendarId, $event->getId());
                                 $deletedCount++;
-                                
-                                $this->logger->info('Deleted Google Calendar event', [
-                                    'event_id' => $event->getId(),
-                                    'booking_id' => $booking->getId()
-                                ]);
                             } catch (\Exception $e) {
-                                $this->logger->warning('Failed to delete event: ' . $e->getMessage());
+                                // Continue to next event
                             }
                         }
                     }
                 } catch (\Exception $e) {
-                    $this->logger->warning('Failed to search calendar: ' . $e->getMessage());
+                    // Continue to next calendar
                 }
             }
             
             return $deletedCount > 0;
         } catch (\Exception $e) {
-            $this->logger->error('Error deleting Google Calendar events: ' . $e->getMessage(), [
-                'integration_id' => $integration->getId(),
-                'user_id' => $integration->getUser()->getId(),
-                'booking_id' => $booking->getId()
-            ]);
-            
             return false;
         }
     }
-
-
 
     /**
      * Delete all existing events in a date range for a user
@@ -1504,22 +1176,11 @@ public function deleteEventForCancelledBooking(IntegrationEntity $integration, \
                 ->setParameter('startDate', $startDate)
                 ->setParameter('endDate', $endDate);
             
-            $deleted = $qb->getQuery()->execute();
-            
-            $this->logger->info('Deleted existing events in date range', [
-                'user_id' => $user->getId(),
-                'count' => $deleted,
-                'start_date' => $startDate->format('Y-m-d'),
-                'end_date' => $endDate->format('Y-m-d')
-            ]);
+            $qb->getQuery()->execute();
         } catch (\Exception $e) {
-            $this->logger->error('Error deleting existing events: ' . $e->getMessage(), [
-                'user_id' => $user->getId()
-            ]);
+            // Just continue
         }
-    }   
-
-
+    }
 
     /**
      * Determine if an event is created by Skedi
@@ -1549,6 +1210,4 @@ public function deleteEventForCancelledBooking(IntegrationEntity $integration, \
         
         return false;
     }
-
-
 }
