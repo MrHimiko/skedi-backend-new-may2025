@@ -111,7 +111,42 @@ class OutlookCalendarService extends IntegrationService
             $this->redirectUri = 'https://app.skedi.com/oauth/outlook/callback';
             $this->authority = 'https://login.microsoftonline.com/common';
         }
+    }   
+
+
+
+    /**
+     * Get client ID
+     */
+    public function getClientId(): string
+    {
+        return $this->clientId;
     }
+
+    /**
+     * Get redirect URI
+     */
+    public function getRedirectUri(): string
+    {
+        return $this->redirectUri;
+    }
+
+    /**
+     * Get tenant ID
+     */
+    public function getTenantId(): string
+    {
+        return $this->tenantId ?: 'common';
+    }
+
+    /**
+     * Get authority
+     */
+    public function getAuthority(): string
+    {
+        return $this->authority;
+    }
+
 
     /**
      * Get Microsoft Graph instance for V2 SDK
@@ -315,7 +350,7 @@ class OutlookCalendarService extends IntegrationService
     /**
      * Refresh token
      */
-    private function refreshToken(IntegrationEntity $integration): void
+    public function refreshToken(IntegrationEntity $integration): void
     {
         if (!$integration->getRefreshToken()) {
             throw new IntegrationException('No refresh token available');
@@ -325,7 +360,7 @@ class OutlookCalendarService extends IntegrationService
             $tenant = $this->tenantId ?: 'common';
             $tokenUrl = "https://login.microsoftonline.com/$tenant/oauth2/v2.0/token";
             
-            $client = new HttpClient();
+            $client = new \GuzzleHttp\Client();
             $response = $client->post($tokenUrl, [
                 'form_params' => [
                     'client_id' => $this->clientId,
@@ -334,11 +369,20 @@ class OutlookCalendarService extends IntegrationService
                     'redirect_uri' => $this->redirectUri,
                     'grant_type' => 'refresh_token',
                     'scope' => 'offline_access User.Read Calendars.ReadWrite'
-                ]
+                ],
+                'http_errors' => false // Don't throw exceptions for HTTP errors
             ]);
             
+            $statusCode = $response->getStatusCode();
             $responseBody = json_decode((string) $response->getBody(), true);
             
+            // If we didn't get a 200 OK response, throw an exception with details
+            if ($statusCode !== 200) {
+                throw new IntegrationException('Token refresh failed with status code ' . $statusCode . 
+                    ': ' . ($responseBody['error_description'] ?? $responseBody['error'] ?? 'Unknown error'));
+            }
+            
+            // Check for error in response body
             if (isset($responseBody['error'])) {
                 throw new IntegrationException('Token refresh failed: ' . 
                     ($responseBody['error_description'] ?? $responseBody['error']));
@@ -360,7 +404,6 @@ class OutlookCalendarService extends IntegrationService
             $this->entityManager->persist($integration);
             $this->entityManager->flush();
         } catch (\Exception $e) {
-            $this->logger->error('Error refreshing token: ' . $e->getMessage());
             throw new IntegrationException('Failed to refresh token: ' . $e->getMessage());
         }
     }
@@ -745,9 +788,9 @@ class OutlookCalendarService extends IntegrationService
         }
     }
 
-    /**
-     * Create an event in Outlook Calendar
-     */
+
+
+
     public function createCalendarEvent(
         IntegrationEntity $integration,
         string $title,
@@ -756,75 +799,59 @@ class OutlookCalendarService extends IntegrationService
         array $options = []
     ): array {
         try {
-            $user = $integration->getUser();
-            $graph = $this->getGraphClient($integration);
-            
-            // Default to primary calendar if not specified
-            $calendarId = $options['calendar_id'] ?? null;
-            
-            // Create a new event model for v2 SDK
-            $event = new Models\Event();
-            $event->setSubject($title);
-            
-            // Set body content
-            $itemBody = new Models\ItemBody();
-            $itemBody->setContentType('HTML');
-            $itemBody->setContent($options['description'] ?? '');
-            $event->setBody($itemBody);
-            
-            // Set start and end time
-            $startDateTimeTimeZone = new Models\DateTimeTimeZone();
-            $startDateTimeTimeZone->setDateTime($startTime->format('Y-m-d\TH:i:s'));
-            $startDateTimeTimeZone->setTimeZone('UTC');
-            $event->setStart($startDateTimeTimeZone);
-            
-            $endDateTimeTimeZone = new Models\DateTimeTimeZone();
-            $endDateTimeTimeZone->setDateTime($endTime->format('Y-m-d\TH:i:s'));
-            $endDateTimeTimeZone->setTimeZone('UTC');
-            $event->setEnd($endDateTimeTimeZone);
-            
-            $event->setIsAllDay(false);
-            
-            // Set location if provided
-            if (!empty($options['location'])) {
-                $location = new Models\Location();
-                $location->setDisplayName($options['location']);
-                $event->setLocation($location);
-            }
-            
-            // Set free/busy status (transparency)
-            $transparency = $options['transparency'] ?? 'opaque'; // opaque = busy, transparent = free
-            $event->setShowAs(($transparency === 'transparent') ? 'free' : 'busy');
-            
-            // Add attendees if provided
-            if (!empty($options['attendees']) && is_array($options['attendees'])) {
-                $attendees = [];
-                foreach ($options['attendees'] as $attendee) {
-                    $attendeeObj = new Models\Attendee();
-                    $emailAddress = new Models\EmailAddress();
-                    $emailAddress->setAddress($attendee['email']);
-                    $emailAddress->setName($attendee['name'] ?? $attendee['email']);
-                    $attendeeObj->setEmailAddress($emailAddress);
-                    $attendeeObj->setType('required');
-                    $attendees[] = $attendeeObj;
+            // Check token expiration explicitly
+            if ($integration->getTokenExpires() && $integration->getTokenExpires() < new DateTime()) {
+                try {
+                    $this->refreshToken($integration);
+                } catch (\Exception $e) {
+                    throw new IntegrationException('Token refresh failed: ' . $e->getMessage());
                 }
-                $event->setAttendees($attendees);
             }
             
-            // Add reminder if provided
-            if (!empty($options['reminders']) && is_array($options['reminders'])) {
-                $reminder = $options['reminders'][0];
-                $event->setReminderMinutesBeforeStart($reminder['minutes'] ?? 15);
-                $event->setIsReminderOn(true);
+            // Create event via direct API call for maximum reliability
+            $client = new \GuzzleHttp\Client([
+                'timeout' => 10, // Add timeout to prevent long-running requests
+                'http_errors' => false // Don't throw exceptions for HTTP errors
+            ]);
+            
+            // Create the event data
+            $eventData = [
+                'subject' => $title,
+                'body' => [
+                    'contentType' => 'HTML',
+                    'content' => $options['description'] ?? ''
+                ],
+                'start' => [
+                    'dateTime' => $startTime->format('Y-m-d\TH:i:s'),
+                    'timeZone' => 'UTC'
+                ],
+                'end' => [
+                    'dateTime' => $endTime->format('Y-m-d\TH:i:s'),
+                    'timeZone' => 'UTC'
+                ]
+            ];
+            
+            // Default to primary calendar (no ID)
+            $endpoint = "https://graph.microsoft.com/v1.0/me/events";
+            
+            // Make the API call
+            $response = $client->post($endpoint, [
+                'headers' => [
+                    'Authorization' => 'Bearer ' . $integration->getAccessToken(),
+                    'Content-Type' => 'application/json'
+                ],
+                'json' => $eventData
+            ]);
+            
+            $statusCode = $response->getStatusCode();
+            
+            if ($statusCode !== 201 && $statusCode !== 200) {
+                throw new IntegrationException(
+                    "Failed to create event. Status: {$statusCode}, Response: " . $response->getBody()->getContents()
+                );
             }
             
-            // Create event in specific calendar or default calendar
-            $response = null;
-            if ($calendarId) {
-                $response = $graph->me()->calendars()->byCalendarId($calendarId)->events()->post($event)->wait();
-            } else {
-                $response = $graph->me()->events()->post($event)->wait();
-            }
+            $responseBody = json_decode($response->getBody()->getContents(), true);
             
             // Update integration's last synced time
             $integration->setLastSynced(new DateTime());
@@ -833,15 +860,14 @@ class OutlookCalendarService extends IntegrationService
             
             // Return event data
             return [
-                'outlook_event_id' => $response->getId(),
-                'calendar_id' => $calendarId,
-                'web_link' => $response->getWebLink(),
+                'outlook_event_id' => $responseBody['id'] ?? null,
+                'calendar_id' => null, // We're using the default calendar
+                'web_link' => $responseBody['webLink'] ?? null,
                 'title' => $title,
                 'start_time' => $startTime->format('Y-m-d H:i:s'),
                 'end_time' => $endTime->format('Y-m-d H:i:s')
             ];
         } catch (\Exception $e) {
-            $this->logger->error('Error creating Outlook Calendar event: ' . $e->getMessage());
             throw new IntegrationException('Failed to create Outlook Calendar event: ' . $e->getMessage());
         }
     }
@@ -919,4 +945,62 @@ class OutlookCalendarService extends IntegrationService
             $this->logger->error('Error syncing user availability: ' . $e->getMessage());
         }
     }
+
+
+
+    /**
+     * Test Outlook Calendar API connection
+     */
+    public function testOutlookConnection(IntegrationEntity $integration): array
+    {
+        try {
+            // Check token expiration
+            if ($integration->getTokenExpires() && $integration->getTokenExpires() < new DateTime()) {
+                try {
+                    $this->refreshToken($integration);
+                    return [
+                        'status' => 'refreshed',
+                        'message' => 'Token was expired and has been refreshed',
+                        'expires' => $integration->getTokenExpires()->format('Y-m-d H:i:s')
+                    ];
+                } catch (\Exception $e) {
+                    return [
+                        'status' => 'refresh_failed',
+                        'message' => 'Token refresh failed: ' . $e->getMessage()
+                    ];
+                }
+            }
+            
+            // Test API access
+            $client = new \GuzzleHttp\Client();
+            $response = $client->get('https://graph.microsoft.com/v1.0/me/calendars', [
+                'headers' => [
+                    'Authorization' => 'Bearer ' . $integration->getAccessToken()
+                ],
+                'http_errors' => false
+            ]);
+            
+            if ($response->getStatusCode() === 200) {
+                $data = json_decode($response->getBody()->getContents(), true);
+                return [
+                    'status' => 'success',
+                    'message' => 'Successfully connected to Outlook Calendar API',
+                    'calendars_count' => count($data['value'] ?? []),
+                    'expires' => $integration->getTokenExpires()->format('Y-m-d H:i:s')
+                ];
+            } else {
+                return [
+                    'status' => 'api_error',
+                    'message' => 'API returned status code: ' . $response->getStatusCode(),
+                    'response' => $response->getBody()->getContents()
+                ];
+            }
+        } catch (\Exception $e) {
+            return [
+                'status' => 'error',
+                'message' => 'Exception: ' . $e->getMessage()
+            ];
+        }
+    }
+
 }

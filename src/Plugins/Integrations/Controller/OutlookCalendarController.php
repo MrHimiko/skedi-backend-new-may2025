@@ -282,4 +282,110 @@ class OutlookCalendarController extends AbstractController
             return $this->responseService->json(false, 'An error occurred: ' . $e->getMessage(), null, 500);
         }
     }
+
+
+
+    /**
+     * Test Outlook connection
+     */
+    #[Route('/user/integrations/outlook/test', name: 'outlook_test#', methods: ['GET'])]
+    public function testOutlookConnection(Request $request): JsonResponse
+    {
+        $user = $request->attributes->get('user');
+        $integrationId = $request->query->get('integration_id');
+        
+        try {
+            $integration = $this->outlookCalendarService->getUserIntegration($user, $integrationId);
+            
+            if (!$integration) {
+                return $this->responseService->json(false, 'Outlook Calendar integration not found. Please connect your calendar first.', null, 404);
+            }
+            
+            $testResult = $this->outlookCalendarService->testOutlookConnection($integration);
+            
+            return $this->responseService->json(true, 'Test completed', $testResult);
+        } catch (\Exception $e) {
+            return $this->responseService->json(false, $e->getMessage(), null, 500);
+        }
+    }
+
+
+    /**
+     * Reset Outlook token (force refresh)
+     */
+    #[Route('/user/integrations/outlook/reset-token', name: 'outlook_reset_token#', methods: ['POST'])]
+    public function resetOutlookToken(Request $request): JsonResponse
+    {
+        $user = $request->attributes->get('user');
+        $data = $request->attributes->get('data');
+        $integrationId = $data['integration_id'] ?? null;
+        
+        try {
+            $integration = $this->outlookCalendarService->getUserIntegration($user, $integrationId);
+            
+            if (!$integration) {
+                return $this->responseService->json(false, 'Outlook Calendar integration not found.', null, 404);
+            }
+            
+            try {
+                // Now this will work since refreshToken is public
+                $this->outlookCalendarService->refreshToken($integration);
+                
+                return $this->responseService->json(true, 'Token refreshed successfully', [
+                    'expires' => $integration->getTokenExpires()->format('Y-m-d H:i:s')
+                ]);
+            } catch (\Exception $e) {
+                // If refresh fails, we need to reconnect
+                return $this->responseService->json(false, 'Token refresh failed. You need to reconnect Outlook: ' . $e->getMessage(), null, 400);
+            }
+        } catch (\Exception $e) {
+            return $this->responseService->json(false, $e->getMessage(), null, 500);
+        }
+    }
+
+
+    /**
+     * Get token details for debugging
+     */
+    #[Route('/user/integrations/outlook/token-details', name: 'outlook_token_details#', methods: ['GET'])]
+    public function getTokenDetails(Request $request): JsonResponse
+    {
+        $user = $request->attributes->get('user');
+        $integrationId = $request->query->get('integration_id');
+        
+        try {
+            $integration = $this->outlookCalendarService->getUserIntegration($user, $integrationId);
+            
+            if (!$integration) {
+                return $this->responseService->json(false, 'Outlook Calendar integration not found.', null, 404);
+            }
+            
+            // Check token status and expiration
+            $tokenExpires = $integration->getTokenExpires();
+            $isExpired = $tokenExpires && $tokenExpires < new DateTime();
+            
+            // Get token information (be careful not to expose the full token)
+            return $this->responseService->json(true, 'Token details retrieved', [
+                'integration_id' => $integration->getId(),
+                'provider' => $integration->getProvider(),
+                'token_expires' => $tokenExpires ? $tokenExpires->format('Y-m-d H:i:s') : 'null',
+                'is_expired' => $isExpired,
+                'has_access_token' => !empty($integration->getAccessToken()),
+                'access_token_length' => $integration->getAccessToken() ? strlen($integration->getAccessToken()) : 0,
+                'has_refresh_token' => !empty($integration->getRefreshToken()),
+                'refresh_token_length' => $integration->getRefreshToken() ? strlen($integration->getRefreshToken()) : 0,
+                'scopes' => $integration->getScopes(),
+                'last_synced' => $integration->getLastSynced() ? $integration->getLastSynced()->format('Y-m-d H:i:s') : 'null',
+                'status' => $integration->getStatus()
+            ]);
+        } catch (\Exception $e) {
+            return $this->responseService->json(false, $e->getMessage(), null, 500);
+        }
+    }
+
+
+
+   
+
+
 }

@@ -17,8 +17,6 @@ use App\Plugins\Integrations\Service\OutlookCalendarService;
 
 use DateTime;
 
-
-
 class EventBookingService
 {
     private CrudManager $crudManager;
@@ -34,7 +32,7 @@ class EventBookingService
         ContactService $contactService,
         EventScheduleService $scheduleService,
         OutlookCalendarService $outlookCalendarService,
-        \App\Plugins\Integrations\Service\GoogleCalendarService $googleCalendarService
+        GoogleCalendarService $googleCalendarService
     ) {
         $this->crudManager = $crudManager;
         $this->entityManager = $entityManager;
@@ -157,12 +155,11 @@ class EventBookingService
 
             // Sync with Google Calendar if integration exists
             try {
-                $this->eventBookingService->syncEventBooking($booking);
+                // Fixed reference - use $this instead of $this->eventBookingService
+                $this->syncEventBooking($booking);
             } catch (\Exception $e) {
-                // Log but don't prevent booking creation
-                $this->entityManager->getLogger()->warning('Failed to sync with Google Calendar: ' . $e->getMessage(), [
-                    'booking_id' => $booking->getId()
-                ]);
+                // Silently catch the exception - don't let calendar sync issues prevent booking creation
+                // Do nothing with the exception
             }
             
             return $booking;
@@ -296,23 +293,14 @@ class EventBookingService
                                 // Use the GoogleCalendarService to delete from Google
                                 $this->googleCalendarService->deleteEventForCancelledBooking($integration, $booking);
                             } catch (\Exception $e) {
-                                // Just log and continue - don't let Google API errors stop us
-                                if (method_exists($this, 'logger') && $this->logger) {
-                                    $this->logger->error('Failed to delete Google Calendar event: ' . $e->getMessage(), [
-                                        'booking_id' => $booking->getId(),
-                                        'user_id' => $user->getId()
-                                    ]);
-                                }
+                                // Just silently catch the exception
+                                // Don't let Google API errors stop us
                             }
                         }
                     }
                 } catch (\Exception $e) {
-                    // Log but continue - we don't want Google errors to break our app
-                    if (method_exists($this, 'logger') && $this->logger) {
-                        $this->logger->error('Error deleting from Google Calendar: ' . $e->getMessage(), [
-                            'booking_id' => $booking->getId()
-                        ]);
-                    }
+                    // Silently catch the exception
+                    // Don't let Google errors break our app
                 }
             }
             // Handle time changes for non-cancelled bookings
@@ -341,9 +329,7 @@ class EventBookingService
         } catch (\Exception $e) {
             throw new EventsException('Failed to cancel booking: ' . $e->getMessage());
         }
-}
-    
-
+    }
 
     public function delete(EventBookingEntity $booking): void
     {
@@ -355,8 +341,12 @@ class EventBookingService
                 // Update availability records
                 $this->scheduleService->handleBookingCancelled($booking);
                 
-                // Delete from Google Calendar - SIMPLIFIED APPROACH
-                $this->deleteFromGoogleCalendar($booking);
+                // Delete from Google Calendar
+                try {
+                    $this->googleCalendarService->deleteGoogleEventsForBooking($booking);
+                } catch (\Exception $e) {
+                    // Silently catch exceptions
+                }
             }
             
             // Remove related guests
@@ -379,7 +369,6 @@ class EventBookingService
             throw new EventsException('Failed to delete booking: ' . $e->getMessage());
         }
     }
-    
     
     /**
      * Add a guest to a booking
@@ -494,8 +483,6 @@ class EventBookingService
         }
     }
 
-
-
     /**
      * Sync cancelled booking with Google Calendar integrations
      */
@@ -528,22 +515,19 @@ class EventBookingService
                         // Delete the event from Google Calendar
                         $this->googleCalendarService->deleteEventForCancelledBooking($integration, $booking);
                     } catch (\Exception $e) {
-                        // Log but continue with other integrations
-                        // This ensures one failed integration doesn't prevent others from being processed
+                        // Silently catch exceptions
                     }
                 }
             }
         } catch (\Exception $e) {
-            // Log but don't propagate the exception to avoid disrupting the cancellation process
+            // Silently catch exceptions
         }
     }   
 
-
-
+   
     /**
-    * Sync a Skedi event booking to Calendar systems
-    */
-
+     * Sync a Skedi event booking to Calendar systems
+     */
     public function syncEventBooking(
         \App\Plugins\Events\Entity\EventBookingEntity $booking, 
         ?\App\Plugins\Account\Entity\UserEntity $specificUser = null
@@ -552,7 +536,12 @@ class EventBookingService
             'success' => 0,
             'failure' => 0,
             'skipped' => 0,
-            'providers' => []
+            'providers' => [],
+            'debug_info' => [
+                'google' => [],
+                'outlook' => [],
+                'general' => []
+            ]
         ];
         
         try {
@@ -588,6 +577,8 @@ class EventBookingService
                 $criteria
             );
             
+            $results['debug_info']['general']['assignee_count'] = count($assignees);
+            
             // Prepare attendees from booking guests
             $attendees = [];
             $guests = $this->crudManager->findMany(
@@ -605,9 +596,15 @@ class EventBookingService
                 ];
             }
             
+            $results['debug_info']['general']['attendee_count'] = count($attendees);
+            $results['debug_info']['general']['booking_id'] = $booking->getId();
+            $results['debug_info']['general']['booking_start'] = $booking->getStartTime()->format('Y-m-d H:i:s');
+            $results['debug_info']['general']['booking_end'] = $booking->getEndTime()->format('Y-m-d H:i:s');
+            
             // Process each assignee
             foreach ($assignees as $assignee) {
                 $user = $assignee->getUser();
+                $results['debug_info']['general']['processing_user_id'] = $user->getId();
                 
                 // Get active Google Calendar integrations for this user
                 $googleIntegrations = $this->crudManager->findMany(
@@ -622,13 +619,17 @@ class EventBookingService
                     ]
                 );
                 
+                $results['debug_info']['google']['integration_count'] = count($googleIntegrations);
+                
                 if (!empty($googleIntegrations)) {
                     $integration = $googleIntegrations[0];
+                    $results['debug_info']['google']['integration_id'] = $integration->getId();
+                    $results['debug_info']['google']['token_expiry'] = $integration->getTokenExpires() ? 
+                        $integration->getTokenExpires()->format('Y-m-d H:i:s') : 'null';
                     
                     try {
                         // Create the event in Google Calendar
-                        $googleCalendarService = $this->container->get(GoogleCalendarService::class);
-                        $createdEvent = $googleCalendarService->createCalendarEvent(
+                        $createdEvent = $this->googleCalendarService->createCalendarEvent(
                             $integration,
                             $title,
                             $booking->getStartTime(),
@@ -640,6 +641,10 @@ class EventBookingService
                             ]
                         );
                         
+                        $results['debug_info']['google']['event_created'] = true;
+                        $results['debug_info']['google']['event_id'] = $createdEvent['google_event_id'] ?? 'unknown';
+                        
+                        // Track results
                         if (!isset($results['providers']['google_calendar'])) {
                             $results['providers']['google_calendar'] = [
                                 'success' => 0,
@@ -650,6 +655,9 @@ class EventBookingService
                         $results['providers']['google_calendar']['success']++;
                         $results['success']++;
                     } catch (\Exception $e) {
+                        $results['debug_info']['google']['error'] = $e->getMessage();
+                        $results['debug_info']['google']['error_trace'] = $e->getTraceAsString();
+                        
                         if (!isset($results['providers']['google_calendar'])) {
                             $results['providers']['google_calendar'] = [
                                 'success' => 0,
@@ -659,7 +667,6 @@ class EventBookingService
                         
                         $results['providers']['google_calendar']['failure']++;
                         $results['failure']++;
-                        $this->logger->error('Failed to create Google Calendar event: ' . $e->getMessage());
                     }
                 }
                 
@@ -676,13 +683,21 @@ class EventBookingService
                     ]
                 );
                 
+                $results['debug_info']['outlook']['integration_count'] = count($outlookIntegrations);
+                
                 if (!empty($outlookIntegrations)) {
                     $integration = $outlookIntegrations[0];
+                    $results['debug_info']['outlook']['integration_id'] = $integration->getId();
+                    $results['debug_info']['outlook']['token_expiry'] = $integration->getTokenExpires() ? 
+                        $integration->getTokenExpires()->format('Y-m-d H:i:s') : 'null';
+                    $results['debug_info']['outlook']['access_token_length'] = $integration->getAccessToken() ? 
+                        strlen($integration->getAccessToken()) : 0;
+                    $results['debug_info']['outlook']['has_refresh_token'] = !empty($integration->getRefreshToken());
+                    $results['debug_info']['outlook']['scopes'] = $integration->getScopes();
                     
                     try {
                         // Create the event in Outlook Calendar
-                        $outlookCalendarService = $this->container->get(OutlookCalendarService::class);
-                        $createdEvent = $outlookCalendarService->createCalendarEvent(
+                        $createdEvent = $this->outlookCalendarService->createCalendarEvent(
                             $integration,
                             $title,
                             $booking->getStartTime(),
@@ -694,6 +709,9 @@ class EventBookingService
                             ]
                         );
                         
+                        $results['debug_info']['outlook']['event_created'] = true;
+                        $results['debug_info']['outlook']['event_id'] = $createdEvent['outlook_event_id'] ?? 'unknown';
+                        
                         if (!isset($results['providers']['outlook_calendar'])) {
                             $results['providers']['outlook_calendar'] = [
                                 'success' => 0,
@@ -704,6 +722,9 @@ class EventBookingService
                         $results['providers']['outlook_calendar']['success']++;
                         $results['success']++;
                     } catch (\Exception $e) {
+                        $results['debug_info']['outlook']['error'] = $e->getMessage();
+                        $results['debug_info']['outlook']['error_trace'] = $e->getTraceAsString();
+                        
                         if (!isset($results['providers']['outlook_calendar'])) {
                             $results['providers']['outlook_calendar'] = [
                                 'success' => 0,
@@ -713,7 +734,6 @@ class EventBookingService
                         
                         $results['providers']['outlook_calendar']['failure']++;
                         $results['failure']++;
-                        $this->logger->error('Failed to create Outlook Calendar event: ' . $e->getMessage());
                     }
                 }
                 
@@ -725,10 +745,10 @@ class EventBookingService
             
             return $results;
         } catch (\Exception $e) {
-            $this->logger->error('Error syncing event booking: ' . $e->getMessage());
+            $results['debug_info']['general']['unhandled_error'] = $e->getMessage();
+            $results['debug_info']['general']['error_trace'] = $e->getTraceAsString();
             return $results;
         }
     }
 
-    
 }
