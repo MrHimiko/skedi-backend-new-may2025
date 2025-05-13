@@ -270,6 +270,9 @@ class EventBookingService
             
             // Update availability records
             $this->scheduleService->handleBookingCancelled($booking);
+            
+            // NEW LINE: Sync cancellation with Google Calendar
+            $this->syncCancellationWithGoogle($booking);
         } catch (\Exception $e) {
             throw new EventsException('Failed to cancel booking: ' . $e->getMessage());
         }
@@ -282,6 +285,9 @@ class EventBookingService
             if (!$booking->isCancelled()) {
                 $booking->setCancelled(true);
                 $this->scheduleService->handleBookingCancelled($booking);
+                
+                // NEW LINE: Sync cancellation with Google Calendar if not already cancelled
+                $this->syncCancellationWithGoogle($booking);
             }
             
             // Remove related guests first
@@ -417,4 +423,51 @@ class EventBookingService
             throw new EventsException($e->getMessage());
         }
     }
+
+
+
+    /**
+     * Sync cancelled booking with Google Calendar integrations
+     */
+    public function syncCancellationWithGoogle(EventBookingEntity $booking): void
+    {
+        try {
+            // Get the event
+            $event = $booking->getEvent();
+            
+            // Get all assignees for this event
+            $assignees = $this->entityManager->getRepository('App\Plugins\Events\Entity\EventAssigneeEntity')
+                ->findBy(['event' => $event]);
+            
+            // Process each assignee
+            foreach ($assignees as $assignee) {
+                // Get the user
+                $user = $assignee->getUser();
+                
+                // Find any Google Calendar integrations for this user
+                $integrations = $this->entityManager->getRepository('App\Plugins\Integrations\Entity\IntegrationEntity')
+                    ->findBy([
+                        'user' => $user,
+                        'provider' => 'google_calendar',
+                        'status' => 'active'
+                    ]);
+                
+                // Process each integration
+                foreach ($integrations as $integration) {
+                    try {
+                        // Delete the event from Google Calendar
+                        $this->googleCalendarService->deleteEventForCancelledBooking($integration, $booking);
+                    } catch (\Exception $e) {
+                        // Log but continue with other integrations
+                        // This ensures one failed integration doesn't prevent others from being processed
+                    }
+                }
+            }
+        } catch (\Exception $e) {
+            // Log but don't propagate the exception to avoid disrupting the cancellation process
+        }
+    }
+
+
+    
 }

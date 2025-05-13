@@ -459,7 +459,6 @@ class GoogleCalendarService extends IntegrationService
         }
     }
 
-
     /**
      * Save single Google Calendar event to database
      */
@@ -471,62 +470,8 @@ class GoogleCalendarService extends IntegrationService
         string $calendarName
     ): ?GoogleCalendarEventEntity {
         try {
-            // Skip events without start/end time
-            if (!$event->getStart() || !$event->getEnd()) {
-                return null;
-            }
-            
-            // Determine if this is an all-day event
-            $isAllDay = false;
-            $startTime = null;
-            $endTime = null;
-            
-            $start = $event->getStart();
-            $end = $event->getEnd();
-            
-            // Handle all-day events
-            if ($start->date) {
-                $isAllDay = true;
-                // For all-day events, use UTC midnight for consistency
-                $startTime = new DateTime($start->date . 'T00:00:00Z', new \DateTimeZone('UTC'));
-                $endTime = new DateTime($end->date . 'T23:59:59Z', new \DateTimeZone('UTC'));
-            } 
-            // Handle timed events
-            else if ($start->dateTime) {
-                // Get timezone from event or use UTC as fallback
-                $timezone = $start->timeZone ?: 'UTC';
-                
-                try {
-                    // Parse with original timezone
-                    $startTime = new DateTime($start->dateTime);
-                    $endTime = new DateTime($end->dateTime);
-                    
-                    // Debug log the original times
-                    $this->logger->debug('Original event times', [
-                        'event_id' => $event->getId(),
-                        'start_time' => $start->dateTime,
-                        'end_time' => $end->dateTime,
-                        'timezone' => $timezone,
-                        'parsed_start' => $startTime->format('Y-m-d H:i:s T'),
-                        'parsed_end' => $endTime->format('Y-m-d H:i:s T')
-                    ]);
-                    
-                    // Make sure they're in UTC for storage
-                    $startTime->setTimezone(new \DateTimeZone('UTC'));
-                    $endTime->setTimezone(new \DateTimeZone('UTC'));
-                } catch (\Exception $e) {
-                    $this->logger->error('Error parsing event times: ' . $e->getMessage(), [
-                        'event_id' => $event->getId(),
-                        'start_time' => $start->dateTime,
-                        'end_time' => $end->dateTime
-                    ]);
-                    return null;
-                }
-            } else {
-                // Neither date nor dateTime available
-                $this->logger->warning('Event has no valid start/end time', [
-                    'event_id' => $event->getId()
-                ]);
+            // Skip cancelled events or events without start/end time
+            if ($event->getStatus() === 'cancelled' || !$event->getStart() || !$event->getEnd()) {
                 return null;
             }
             
@@ -537,14 +482,36 @@ class GoogleCalendarService extends IntegrationService
                 'calendarId' => $calendarId
             ]);
             
-            // Debug log the final times we're saving
-            $this->logger->debug('Saving event with times', [
-                'event_id' => $event->getId(),
-                'title' => $event->getSummary(),
-                'start_time' => $startTime->format('Y-m-d H:i:s e'),
-                'end_time' => $endTime->format('Y-m-d H:i:s e'),
-                'is_all_day' => $isAllDay
-            ]);
+            // Determine if this is an all-day event
+            $isAllDay = false;
+            $startTime = null;
+            $endTime = null;
+            
+            $start = $event->getStart();
+            $end = $event->getEnd();
+            
+            if ($start->date) {
+                // All-day event
+                $isAllDay = true;
+                $startTime = new DateTime($start->date, new \DateTimeZone('UTC'));
+                $endTime = new DateTime($end->date, new \DateTimeZone('UTC'));
+            } else {
+                // Timed event - IMPORTANT: Explicitly convert to UTC
+                $startDateTime = $start->dateTime;
+                $endDateTime = $end->dateTime;
+                
+                // Get timezone from event or use UTC as fallback
+                $timezone = $start->timeZone ?: 'UTC';
+                
+                // Parse with original timezone
+                $startTime = new DateTime($startDateTime, new \DateTimeZone($timezone));
+                $endTime = new DateTime($endDateTime, new \DateTimeZone($timezone));
+                
+                // Convert to UTC
+                $startTime->setTimezone(new \DateTimeZone('UTC'));
+                $endTime->setTimezone(new \DateTimeZone('UTC'));
+            }
+
             
             // Create or update the event
             if ($existingEvent) {
@@ -554,7 +521,7 @@ class GoogleCalendarService extends IntegrationService
                 $existingEvent->setStartTime($startTime);
                 $existingEvent->setEndTime($endTime);
                 $existingEvent->setIsAllDay($isAllDay);
-                $existingEvent->setStatus($event->getStatus() ?: 'confirmed');
+                $existingEvent->setStatus($event->getStatus());
                 $existingEvent->setTransparency($event->getTransparency());
                 $existingEvent->setCalendarName($calendarName);
                 $existingEvent->setEtag($event->getEtag());
@@ -569,7 +536,6 @@ class GoogleCalendarService extends IntegrationService
                 $existingEvent->setSyncedAt(new DateTime());
                 
                 $this->entityManager->persist($existingEvent);
-                $this->entityManager->flush();
                 
                 return $existingEvent;
             } else {
@@ -586,7 +552,7 @@ class GoogleCalendarService extends IntegrationService
                 $newEvent->setStartTime($startTime);
                 $newEvent->setEndTime($endTime);
                 $newEvent->setIsAllDay($isAllDay);
-                $newEvent->setStatus($event->getStatus() ?: 'confirmed');
+                $newEvent->setStatus($event->getStatus());
                 $newEvent->setTransparency($event->getTransparency());
                 $newEvent->setEtag($event->getEtag());
                 $newEvent->setHtmlLink($event->getHtmlLink());
@@ -600,16 +566,14 @@ class GoogleCalendarService extends IntegrationService
                 $newEvent->setSyncedAt(new DateTime());
                 
                 $this->entityManager->persist($newEvent);
-                $this->entityManager->flush();
                 
                 return $newEvent;
             }
         } catch (\Exception $e) {
             $this->logger->error('Error saving event: ' . $e->getMessage(), [
-                'event_id' => $event->getId() ?? 'unknown',
+                'event_id' => $event->getId(),
                 'calendar_id' => $calendarId,
-                'user_id' => $user->getId(),
-                'trace' => $e->getTraceAsString()
+                'user_id' => $user->getId()
             ]);
             
             return null;
@@ -691,7 +655,6 @@ class GoogleCalendarService extends IntegrationService
         }
     }
 
-
     /**
      * Sync calendar events for a specific date range
      */
@@ -711,26 +674,29 @@ class GoogleCalendarService extends IntegrationService
             // Get calendar list
             $calendarList = $service->calendarList->listCalendarList();
             $savedEvents = [];
+            $allEventIds = [];
             
             // Format dates for Google API query
             $timeMin = $startDate->format('c');
             $timeMax = $endDate->format('c');
             
-            $this->logger->info('Starting Google Calendar sync with full reset', [
+            // Start a database transaction
+            $this->entityManager->beginTransaction();
+            $batchSize = 0;
+            $maxBatchSize = 100; // Process this many events before flushing
+            
+            $this->logger->info('Starting Google Calendar sync', [
                 'integration_id' => $integration->getId(),
                 'user_id' => $user->getId(),
                 'start_date' => $startDate->format('Y-m-d'),
                 'end_date' => $endDate->format('Y-m-d')
             ]);
             
-            // STEP 1: DELETE ALL EXISTING EVENTS FOR THIS DATE RANGE
-            $this->deleteAllEventsInRange($user, $startDate, $endDate);
-            
-            // STEP 2: FETCH AND SAVE ALL ACTIVE EVENTS FROM GOOGLE CALENDAR
             // Loop through each calendar
             foreach ($calendarList->getItems() as $calendarListEntry) {
                 $calendarId = $calendarListEntry->getId();
                 $calendarName = $calendarListEntry->getSummary();
+                $calendarEventIds = [];
                 
                 // Always include primary calendar and selected calendars
                 $isPrimary = $calendarListEntry->getPrimary() ?? false;
@@ -740,11 +706,6 @@ class GoogleCalendarService extends IntegrationService
                     continue;
                 }
                 
-                $this->logger->info('Processing calendar', [
-                    'calendar_id' => $calendarId,
-                    'calendar_name' => $calendarName
-                ]);
-                
                 // Get events from this calendar with pagination
                 $pageToken = null;
                 
@@ -752,7 +713,7 @@ class GoogleCalendarService extends IntegrationService
                     $optParams = [
                         'timeMin' => $timeMin,
                         'timeMax' => $timeMax,
-                        'showDeleted' => false, // Only get active events
+                        'showDeleted' => true,
                         'singleEvents' => true,
                         'orderBy' => 'startTime',
                         'maxResults' => 250 // Reasonable batch size for API
@@ -766,6 +727,8 @@ class GoogleCalendarService extends IntegrationService
                     $events = $eventsResult->getItems();
                     
                     $this->logger->info('Retrieved batch of events', [
+                        'calendar_id' => $calendarId,
+                        'calendar_name' => $calendarName,
                         'batch_size' => count($events)
                     ]);
                     
@@ -789,23 +752,46 @@ class GoogleCalendarService extends IntegrationService
                             }
                         }
                         
-                        // Save the active event to our database
+                        // Save the event to our database
                         $savedEvent = $this->saveEvent($integration, $user, $event, $calendarId, $calendarName);
                         if ($savedEvent) {
                             $savedEvents[] = $savedEvent;
+                            $calendarEventIds[] = $event->getId();
+                            $batchSize++;
                         }
+                    }
+                    
+                    // If we've processed enough events, flush to database
+                    if ($batchSize >= $maxBatchSize) {
+                        $this->entityManager->flush();
+                        $batchSize = 0;
+                        $this->logger->info('Flushed batch of events to database');
                     }
                     
                     // Get the next page token
                     $pageToken = $eventsResult->getNextPageToken();
                     
                 } while ($pageToken); // Continue until no more pages
+                
+                // Clean up deleted events for this calendar
+                $this->cleanupDeletedEvents($user, $calendarEventIds, $calendarId, $startDate, $endDate);
+                
+                // Collect all event IDs for final check
+                $allEventIds = array_merge($allEventIds, $calendarEventIds);
+            }
+            
+            // Flush any remaining events
+            if ($batchSize > 0) {
+                $this->entityManager->flush();
             }
             
             // Update last synced timestamp
             $integration->setLastSynced(new DateTime());
             $this->entityManager->persist($integration);
             $this->entityManager->flush();
+            
+            // Commit the transaction
+            $this->entityManager->commit();
             
             // Also update the user availability records
             $this->syncUserAvailability($user, $savedEvents);
@@ -818,6 +804,11 @@ class GoogleCalendarService extends IntegrationService
             
             return $savedEvents;
         } catch (\Exception $e) {
+            // Rollback transaction on error
+            if ($this->entityManager->getConnection()->isTransactionActive()) {
+                $this->entityManager->rollback();
+            }
+            
             $this->logger->error('Error syncing events: ' . $e->getMessage(), [
                 'integration_id' => $integration->getId(),
                 'user_id' => $integration->getUser()->getId(),
@@ -828,42 +819,54 @@ class GoogleCalendarService extends IntegrationService
         }
     }
 
+
     /**
-     * Delete all events for a user within a specific date range
+     * Clean up events that no longer exist in Google Calendar
      */
-    private function deleteAllEventsInRange(UserEntity $user, DateTime $startDate, DateTime $endDate): void
+
+    private function cleanupDeletedEvents(UserEntity $user, array $keepEventIds, string $calendarId, DateTime $startDate, DateTime $endDate): void
     {
         try {
-            $this->logger->info('Deleting all existing events in date range', [
-                'user_id' => $user->getId(),
-                'start_date' => $startDate->format('Y-m-d'),
-                'end_date' => $endDate->format('Y-m-d')
-            ]);
+            $filters = [
+                [
+                    'field' => 'startTime',
+                    'operator' => 'greater_than_or_equal',
+                    'value' => $startDate
+                ],
+                [
+                    'field' => 'endTime',
+                    'operator' => 'less_than_or_equal',
+                    'value' => $endDate
+                ],
+                [
+                    'field' => 'calendarId',
+                    'operator' => 'equals',
+                    'value' => $calendarId
+                ]
+            ];
             
-            // Create query builder to find all events in the range
-            $qb = $this->entityManager->createQueryBuilder();
-            $qb->delete(GoogleCalendarEventEntity::class, 'e')
-                ->where('e.user = :user')
-                ->andWhere('e.startTime >= :start')
-                ->andWhere('e.endTime <= :end')
-                ->setParameter('user', $user)
-                ->setParameter('start', $startDate)
-                ->setParameter('end', $endDate);
+            $events = $this->crudManager->findMany(
+                GoogleCalendarEventEntity::class,
+                $filters,
+                1,
+                1000,
+                ['user' => $user]
+            );
             
-            $result = $qb->getQuery()->execute();
-            
-            $this->logger->info('Deleted existing events', [
-                'count' => $result
-            ]);
+            foreach ($events as $event) {
+                if (!in_array($event->getGoogleEventId(), $keepEventIds)) {
+                    // Mark as cancelled
+                    $event->setStatus('cancelled');
+                    $this->entityManager->persist($event);
+                }
+            }
         } catch (\Exception $e) {
-            $this->logger->error('Error deleting events: ' . $e->getMessage(), [
-                'user_id' => $user->getId()
+            $this->logger->error('Error cleaning up deleted events: ' . $e->getMessage(), [
+                'user_id' => $user->getId(),
+                'calendar_id' => $calendarId
             ]);
-            
-            // Don't rethrow - we want to continue with the sync even if delete fails
         }
     }
-
 
     /**
      * Sync user availability records from Google Calendar events
@@ -1013,7 +1016,6 @@ class GoogleCalendarService extends IntegrationService
             // Update integration's last synced time
             $integration->setLastSynced(new DateTime());
             $this->entityManager->persist($integration);
-            $this->entityManager->flush();
             
             // Store the event in our database
             $savedEvent = $this->saveEvent(
@@ -1024,8 +1026,12 @@ class GoogleCalendarService extends IntegrationService
                 $options['calendar_name'] ?? 'Google Calendar'
             );
             
-            if (!$savedEvent) {
-                throw new IntegrationException('Failed to save the event to database');
+            // Make sure we flush changes to the database
+            $this->entityManager->flush();
+            
+            // Make sure the entity has an ID before returning
+            if (!$savedEvent || !$savedEvent->getId()) {
+                throw new IntegrationException('Failed to save the event to database or entity has no ID');
             }
             
             // Log success
@@ -1057,13 +1063,138 @@ class GoogleCalendarService extends IntegrationService
     }
 
 
+    public function deleteEventForCancelledBooking(IntegrationEntity $integration, \App\Plugins\Events\Entity\EventBookingEntity $booking): bool
+    {
+        try {
+            $user = $integration->getUser();
+            $client = $this->getGoogleClient($integration);
+            
+            // Check if token needs refresh
+            if ($integration->getTokenExpires() && $integration->getTokenExpires() < new DateTime()) {
+                $this->refreshToken($integration, $client);
+            }
+            
+            $service = new GoogleCalendar($client);
+            $event = $booking->getEvent();
+            $title = $event->getName();
+            
+            // Get all calendars for this user
+            $calendarList = $service->calendarList->listCalendarList();
+            $deletedCount = 0;
+            
+            // Log the start of the operation
+            $this->logger->info('Deleting Google Calendar events for cancelled booking', [
+                'booking_id' => $booking->getId(),
+                'event_id' => $event->getId(),
+                'user_id' => $user->getId()
+            ]);
+            
+            foreach ($calendarList->getItems() as $calendarListEntry) {
+                $calendarId = $calendarListEntry->getId();
+                
+                // Only process primary calendar and selected calendars
+                $isPrimary = $calendarListEntry->getPrimary() ?? false;
+                $isSelected = $calendarListEntry->getSelected() ?? false;
+                
+                if (!$isPrimary && !$isSelected) {
+                    continue;
+                }
+                
+                // Search for events that match this booking by time and title
+                $startTime = clone $booking->getStartTime();
+                $endTime = clone $booking->getEndTime();
+                
+                // Add a small buffer to handle potential time discrepancies
+                $startSearch = clone $startTime;
+                $startSearch->modify('-2 minutes');
+                $endSearch = clone $endTime;
+                $endSearch->modify('+2 minutes');
+                
+                $optParams = [
+                    'timeMin' => $startSearch->format('c'),
+                    'timeMax' => $endSearch->format('c'),
+                    'q' => $title, // Search by title
+                    'singleEvents' => true
+                ];
+                
+                try {
+                    $eventsResult = $service->events->listEvents($calendarId, $optParams);
+                    $events = $eventsResult->getItems();
+                    
+                    $this->logger->info('Found potential matching events', [
+                        'calendar_id' => $calendarId,
+                        'count' => count($events)
+                    ]);
+                    
+                    foreach ($events as $event) {
+                        // Get event start/end times
+                        $eventStart = null;
+                        $eventEnd = null;
+                        
+                        if ($event->getStart()->dateTime) {
+                            $eventStart = new DateTime($event->getStart()->dateTime);
+                            $eventEnd = new DateTime($event->getEnd()->dateTime);
+                        } else if ($event->getStart()->date) {
+                            // All-day event
+                            continue; // Skip all-day events as they're likely not our booking
+                        }
+                        
+                        if (!$eventStart || !$eventEnd) {
+                            continue; // Skip if we couldn't parse times
+                        }
+                        
+                        // Check if this event matches our booking time closely
+                        $startDiff = abs($eventStart->getTimestamp() - $startTime->getTimestamp());
+                        $endDiff = abs($eventEnd->getTimestamp() - $endTime->getTimestamp());
+                        
+                        // If start and end times are close (within 3 minutes)
+                        if ($startDiff <= 180 && $endDiff <= 180) {
+                            try {
+                                // Delete the event from Google Calendar
+                                $service->events->delete($calendarId, $event->getId());
+                                $deletedCount++;
+                                
+                                $this->logger->info('Deleted Google Calendar event', [
+                                    'event_id' => $event->getId(),
+                                    'calendar_id' => $calendarId,
+                                    'title' => $event->getSummary()
+                                ]);
+                            } catch (\Exception $e) {
+                                $this->logger->warning('Failed to delete event: ' . $e->getMessage(), [
+                                    'event_id' => $event->getId(),
+                                    'calendar_id' => $calendarId
+                                ]);
+                            }
+                        }
+                    }
+                } catch (\Exception $e) {
+                    $this->logger->warning('Failed to search calendar: ' . $e->getMessage(), [
+                        'calendar_id' => $calendarId
+                    ]);
+                }
+            }
+            
+            $this->logger->info('Finished processing cancelled booking', [
+                'booking_id' => $booking->getId(),
+                'deleted_count' => $deletedCount
+            ]);
+            
+            return $deletedCount > 0;
+        } catch (\Exception $e) {
+            $this->logger->error('Error deleting Google Calendar events: ' . $e->getMessage(), [
+                'integration_id' => $integration->getId(),
+                'user_id' => $integration->getUser()->getId(),
+                'booking_id' => $booking->getId()
+            ]);
+            
+            return false;
+        }
+    }
+
+
 
     /**
      * Sync a Skedi event booking to Google Calendar
-     *
-     * @param EventBookingEntity $booking The event booking to sync
-     * @param UserEntity|null $specificUser Optional: sync only for a specific user
-     * @return array Status information about sync operations
      */
     public function syncEventBooking(
         \App\Plugins\Events\Entity\EventBookingEntity $booking, 
@@ -1087,8 +1218,9 @@ class GoogleCalendarService extends IntegrationService
             if ($formData) {
                 $description .= "\nBooking details:\n";
                 foreach ($formData as $key => $value) {
-                    if (is_string($value)) {
-                        $description .= "- " . ucfirst(str_replace('_', ' ', $key)) . ": $value\n";
+                    if (is_scalar($value)) {
+                        $description .= "- " . ucfirst(str_replace('_', ' ', $key)) . ": " . 
+                            (is_string($value) ? $value : json_encode($value)) . "\n";
                     }
                 }
             }
@@ -1130,7 +1262,7 @@ class GoogleCalendarService extends IntegrationService
                 
                 // Get active Google Calendar integrations for this user
                 $integrations = $this->crudManager->findMany(
-                    IntegrationEntity::class,
+                    'App\Plugins\Integrations\Entity\IntegrationEntity',
                     [],
                     1,
                     10,
@@ -1150,17 +1282,21 @@ class GoogleCalendarService extends IntegrationService
                 $integration = $integrations[0];
                 
                 try {
-                    // Create the event
-                    $this->createCalendarEvent(
+                    // Create the event in Google Calendar and get back the result
+                    $createdEvent = $this->createCalendarEvent(
                         $integration,
                         $title,
                         $booking->getStartTime(),
                         $booking->getEndTime(),
                         [
                             'description' => $description,
-                            'attendees' => $attendees
+                            'attendees' => $attendees,
+                            'source_id' => 'booking_' . $booking->getId()
                         ]
                     );
+                    
+                    // Make sure the entity is persisted and flushed before using its ID
+                    $this->entityManager->flush();
                     
                     $results['success']++;
                 } catch (\Exception $e) {
