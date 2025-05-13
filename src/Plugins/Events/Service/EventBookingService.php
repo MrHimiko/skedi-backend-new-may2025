@@ -271,26 +271,30 @@ class EventBookingService
             // Update availability records
             $this->scheduleService->handleBookingCancelled($booking);
             
-            // NEW LINE: Sync cancellation with Google Calendar
-            $this->syncCancellationWithGoogle($booking);
+            // Delete from Google Calendar - SIMPLIFIED APPROACH
+            $this->deleteFromGoogleCalendar($booking);
         } catch (\Exception $e) {
             throw new EventsException('Failed to cancel booking: ' . $e->getMessage());
         }
     }
     
+
+
     public function delete(EventBookingEntity $booking): void
     {
         try {
-            // First mark the booking as cancelled to update availability records
+            // First cancel the booking if not already cancelled
             if (!$booking->isCancelled()) {
                 $booking->setCancelled(true);
+                
+                // Update availability records
                 $this->scheduleService->handleBookingCancelled($booking);
                 
-                // NEW LINE: Sync cancellation with Google Calendar if not already cancelled
-                $this->syncCancellationWithGoogle($booking);
+                // Delete from Google Calendar - SIMPLIFIED APPROACH
+                $this->deleteFromGoogleCalendar($booking);
             }
             
-            // Remove related guests first
+            // Remove related guests
             $guests = $this->crudManager->findMany(
                 EventGuestEntity::class,
                 [],
@@ -310,6 +314,7 @@ class EventBookingService
             throw new EventsException('Failed to delete booking: ' . $e->getMessage());
         }
     }
+    
     
     /**
      * Add a guest to a booking
@@ -467,7 +472,6 @@ class EventBookingService
             // Log but don't propagate the exception to avoid disrupting the cancellation process
         }
     }
-
 
     
 }
