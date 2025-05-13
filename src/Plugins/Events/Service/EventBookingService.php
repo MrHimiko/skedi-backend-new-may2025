@@ -170,9 +170,19 @@ class EventBookingService
     public function update(EventBookingEntity $booking, array $data): void
     {
         try {
-            // Check if times are being changed
-            $timesChanged = false;
+            // Check if status is being changed to a cancellation state
+            $isCancellation = false;
+            if (!empty($data['status']) && 
+                in_array($data['status'], ['cancelled', 'canceled', 'removed', 'deleted']) && 
+                $booking->getStatus() !== $data['status']) {
+                $isCancellation = true;
+            }
             
+            // Track if booking was previously cancelled
+            $wasPreviouslyCancelled = $booking->isCancelled();
+            
+            // Update times if provided
+            $timesChanged = false;
             if (!empty($data['start_time']) && !empty($data['end_time'])) {
                 $startTime = $data['start_time'] instanceof \DateTimeInterface 
                     ? $data['start_time'] 
@@ -209,6 +219,11 @@ class EventBookingService
             // Update status if provided
             if (!empty($data['status'])) {
                 $booking->setStatus($data['status']);
+                
+                // If status is a cancellation type, also set cancelled flag
+                if (in_array($data['status'], ['cancelled', 'canceled', 'removed', 'deleted'])) {
+                    $booking->setCancelled(true);
+                }
             }
             
             // Update form data if provided
@@ -216,9 +231,12 @@ class EventBookingService
                 $booking->setFormDataFromArray($data['form_data']);
             }
             
-            // Update cancellation status if provided
+            // Update cancellation status if explicitly provided
             if (isset($data['cancelled'])) {
                 $booking->setCancelled((bool)$data['cancelled']);
+                if ((bool)$data['cancelled'] && !$wasPreviouslyCancelled) {
+                    $isCancellation = true;
+                }
             }
             
             $this->entityManager->persist($booking);
@@ -246,13 +264,56 @@ class EventBookingService
                 }
             }
             
-            // Update availability records if times changed or status changed
-            if ($timesChanged || isset($data['cancelled'])) {
-                if ($booking->isCancelled()) {
-                    $this->scheduleService->handleBookingCancelled($booking);
-                } else {
-                    $this->scheduleService->handleBookingUpdated($booking);
+            // Handle cancellation - updating availability and Google Calendar
+            if ($isCancellation) {
+                // Update availability records
+                $this->scheduleService->handleBookingCancelled($booking);
+                
+                // Delete from Google Calendar
+                try {
+                    // Get all assignees for this event
+                    $event = $booking->getEvent();
+                    $assignees = $this->entityManager->getRepository('App\Plugins\Events\Entity\EventAssigneeEntity')
+                        ->findBy(['event' => $event]);
+                    
+                    foreach ($assignees as $assignee) {
+                        $user = $assignee->getUser();
+                        
+                        // Find Google Calendar integrations for this user
+                        $integrations = $this->entityManager->getRepository('App\Plugins\Integrations\Entity\IntegrationEntity')
+                            ->findBy([
+                                'user' => $user,
+                                'provider' => 'google_calendar',
+                                'status' => 'active'
+                            ]);
+                        
+                        foreach ($integrations as $integration) {
+                            try {
+                                // Use the GoogleCalendarService to delete from Google
+                                $this->googleCalendarService->deleteEventForCancelledBooking($integration, $booking);
+                            } catch (\Exception $e) {
+                                // Just log and continue - don't let Google API errors stop us
+                                if (method_exists($this, 'logger') && $this->logger) {
+                                    $this->logger->error('Failed to delete Google Calendar event: ' . $e->getMessage(), [
+                                        'booking_id' => $booking->getId(),
+                                        'user_id' => $user->getId()
+                                    ]);
+                                }
+                            }
+                        }
+                    }
+                } catch (\Exception $e) {
+                    // Log but continue - we don't want Google errors to break our app
+                    if (method_exists($this, 'logger') && $this->logger) {
+                        $this->logger->error('Error deleting from Google Calendar: ' . $e->getMessage(), [
+                            'booking_id' => $booking->getId()
+                        ]);
+                    }
                 }
+            }
+            // Handle time changes for non-cancelled bookings
+            else if ($timesChanged && !$booking->isCancelled()) {
+                $this->scheduleService->handleBookingUpdated($booking);
             }
         } catch (\Exception $e) {
             throw new EventsException('Failed to update booking: ' . $e->getMessage());
@@ -271,12 +332,12 @@ class EventBookingService
             // Update availability records
             $this->scheduleService->handleBookingCancelled($booking);
             
-            // Delete from Google Calendar - SIMPLIFIED APPROACH
-            $this->deleteFromGoogleCalendar($booking);
+            // Delete from Google Calendar using the GoogleCalendarService
+            $this->googleCalendarService->deleteGoogleEventsForBooking($booking);
         } catch (\Exception $e) {
             throw new EventsException('Failed to cancel booking: ' . $e->getMessage());
         }
-    }
+}
     
 
 
@@ -471,7 +532,7 @@ class EventBookingService
         } catch (\Exception $e) {
             // Log but don't propagate the exception to avoid disrupting the cancellation process
         }
-    }
+    }   
 
     
 }
