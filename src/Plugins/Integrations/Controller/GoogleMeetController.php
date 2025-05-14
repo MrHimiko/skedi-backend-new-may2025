@@ -1,4 +1,5 @@
 <?php
+// src/Plugins/Integrations/Controller/GoogleMeetController.php
 
 namespace App\Plugins\Integrations\Controller;
 
@@ -44,6 +45,7 @@ class GoogleMeetController extends AbstractController
     
     /**
      * Handle Google OAuth callback for Meet
+     * This matches EXACTLY the pattern used in GoogleCalendarController
      */
     #[Route('/user/integrations/google-meet/callback', name: 'google_meet_auth_callback#', methods: ['POST'])]
     public function handleGoogleMeetCallback(Request $request): JsonResponse
@@ -103,7 +105,6 @@ class GoogleMeetController extends AbstractController
             // Additional options
             $options = [
                 'description' => $data['description'] ?? null,
-                'calendar_id' => $data['calendar_id'] ?? 'primary',
                 'is_guest_allowed' => $data['is_guest_allowed'] ?? true,
                 'enable_recording' => $data['enable_recording'] ?? false,
             ];
@@ -141,34 +142,6 @@ class GoogleMeetController extends AbstractController
             }
             
             return $this->responseService->json(true, 'retrieve', $meetEvent->toArray());
-        } catch (\Exception $e) {
-            return $this->responseService->json(false, 'An error occurred: ' . $e->getMessage(), null, 500);
-        }
-    }
-    
-    /**
-     * Cancel a Google Meet event
-     */
-    #[Route('/user/integrations/meet-events/{id}/cancel', name: 'google_meet_cancel#', methods: ['POST'])]
-    public function cancelMeetEvent(int $id, Request $request): JsonResponse
-    {
-        try {
-            $user = $request->attributes->get('user');
-            
-            // Find the Meet event
-            $meetEvent = $this->googleMeetService->googleMeetEventRepository->find($id);
-            
-            if (!$meetEvent || $meetEvent->getUser()->getId() !== $user->getId()) {
-                return $this->responseService->json(false, 'Google Meet event not found', null, 404);
-            }
-            
-            $success = $this->googleMeetService->cancelMeetEvent($meetEvent);
-            
-            if ($success) {
-                return $this->responseService->json(true, 'Google Meet event cancelled successfully');
-            } else {
-                return $this->responseService->json(false, 'Failed to cancel Google Meet event', null, 500);
-            }
         } catch (\Exception $e) {
             return $this->responseService->json(false, 'An error occurred: ' . $e->getMessage(), null, 500);
         }

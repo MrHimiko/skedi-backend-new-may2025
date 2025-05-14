@@ -1,4 +1,5 @@
 <?php
+// src/Plugins/Integrations/Service/GoogleMeetService.php
 
 namespace App\Plugins\Integrations\Service;
 
@@ -14,99 +15,109 @@ use Symfony\Component\DependencyInjection\ParameterBag\ParameterBagInterface;
 use DateTime;
 use DateTimeInterface;
 
+// Google API imports
+use Google\Client as GoogleClient;
+use Google\Service\Calendar as GoogleCalendar;
+use Google\Service\Oauth2;
+
 class GoogleMeetService
 {
     private EntityManagerInterface $entityManager;
     private IntegrationRepository $integrationRepository;
     private GoogleMeetEventRepository $googleMeetEventRepository;
-    private GoogleCalendarService $googleCalendarService;
     private CrudManager $crudManager;
     private string $clientId;
     private string $clientSecret;
     private string $redirectUri;
-
+    private string $tenantId;
+    private string $authority;
+    
     public function __construct(
         EntityManagerInterface $entityManager,
         IntegrationRepository $integrationRepository,
         GoogleMeetEventRepository $googleMeetEventRepository,
-        GoogleCalendarService $googleCalendarService,
         CrudManager $crudManager,
         ParameterBagInterface $parameterBag
     ) {
         $this->entityManager = $entityManager;
         $this->integrationRepository = $integrationRepository;
         $this->googleMeetEventRepository = $googleMeetEventRepository;
-        $this->googleCalendarService = $googleCalendarService;
         $this->crudManager = $crudManager;
         
-        // Try to get the parameters or use fallbacks (same as GoogleCalendarService)
+        // Try to get the parameters
         try {
             $this->clientId = $parameterBag->get('google.client_id');
         } catch (\Exception $e) {
+            // Temporary fallback for testing
             $this->clientId = '263415563843-iisvu1oericu0v5mvc7bl2c1p3obq2mq.apps.googleusercontent.com';
         }
         
         try {
             $this->clientSecret = $parameterBag->get('google.client_secret');
         } catch (\Exception $e) {
+            // Temporary fallback
             $this->clientSecret = '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';
         }
         
         try {
             $this->redirectUri = $parameterBag->get('google.redirect_uri');
         } catch (\Exception $e) {
+            // Temporary fallback
             $this->redirectUri = 'https://app.skedi.com/oauth/google/callback';
         }
     }
 
     /**
-     * Get Google Meet integration for a user
+     * Get Google Client instance
      */
-    public function getUserIntegration(UserEntity $user, ?int $integrationId = null): ?IntegrationEntity
+    public function getGoogleClient(?IntegrationEntity $integration = null): GoogleClient
     {
-        if ($integrationId) {
-            $integration = $this->integrationRepository->find($integrationId);
-            if ($integration && $integration->getUser()->getId() === $user->getId() && 
-                $integration->getProvider() === 'google_meet' && 
-                $integration->getStatus() === 'active') {
-                return $integration;
+        $client = new GoogleClient();
+        
+        // Set exact credentials without any string manipulation
+        $clientId = '263415563843-iisvu1oericu0v5mvc7bl2c1p3obq2mq.apps.googleusercontent.com';
+        $clientSecret = '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';
+        $redirectUri = 'https://app.skedi.com/oauth/google/callback';
+        
+        // Set client parameters
+        $client->setClientId($clientId);
+        $client->setClientSecret($clientSecret);
+        $client->setRedirectUri($redirectUri);
+        
+        // Set scopes specifically for Google Meet
+        $client->setScopes([
+            'https://www.googleapis.com/auth/calendar',
+            'https://www.googleapis.com/auth/meetings.space.created',
+            'https://www.googleapis.com/auth/meetings.space.readonly'
+        ]);
+        
+        // Standard OAuth parameters
+        $client->setAccessType('offline');
+        $client->setPrompt('consent');
+        $client->setIncludeGrantedScopes(true);
+        
+        // Handle existing tokens if integration provided
+        if ($integration && $integration->getAccessToken()) {
+            // Simplified token handling
+            $tokenData = ['access_token' => $integration->getAccessToken()];
+            
+            if ($integration->getRefreshToken()) {
+                $tokenData['refresh_token'] = $integration->getRefreshToken();
             }
-            return null;
+            
+            $client->setAccessToken($tokenData);
         }
         
-        // First, try to find a Google Meet integration
-        $meetIntegration = $this->integrationRepository->findOneBy(
-            [
-                'user' => $user,
-                'provider' => 'google_meet',
-                'status' => 'active'
-            ],
-            ['created' => 'DESC']
-        );
-        
-        if ($meetIntegration) {
-            return $meetIntegration;
-        }
-        
-        // If no specific Meet integration exists, try to use Google Calendar integration
-        return $this->integrationRepository->findOneBy(
-            [
-                'user' => $user,
-                'provider' => 'google_calendar',
-                'status' => 'active'
-            ],
-            ['created' => 'DESC']
-        );
+        return $client;
     }
 
     /**
-     * Get OAuth URL for Google Meet
+     * Get OAuth URL
      */
     public function getAuthUrl(): string
     {
-        $client = new \Google\Client();
+        $client = new GoogleClient();
         
-        // Hardcode these values directly as in GoogleCalendarService
         $clientId = '263415563843-iisvu1oericu0v5mvc7bl2c1p3obq2mq.apps.googleusercontent.com';
         $clientSecret = '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';
         $redirectUri = 'https://app.skedi.com/oauth/google/callback';
@@ -118,39 +129,44 @@ class GoogleMeetService
         $client->setPrompt('consent');
         $client->setIncludeGrantedScopes(true);
         
+        // Include userinfo.email scope and meet-specific scopes
         $client->setScopes([
+            'https://www.googleapis.com/auth/calendar',
             'https://www.googleapis.com/auth/meetings.space.created',
             'https://www.googleapis.com/auth/meetings.space.readonly',
-            
-            // Basic user info
             'https://www.googleapis.com/auth/userinfo.email'
         ]);
         
         return $client->createAuthUrl();
     }
 
-  
-
     /**
      * Handle OAuth callback and exchange code for tokens
+     * This follows EXACTLY the same pattern as GoogleCalendarService
      */
     public function handleAuthCallback(UserEntity $user, string $code): IntegrationEntity
     {
         try {
             // Create a new Google client for this authentication flow
-            $client = new \Google\Client();
+            $client = new GoogleClient();
             
             // Set direct credentials
-            $client->setClientId($this->clientId);
-            $client->setClientSecret($this->clientSecret);
-            $client->setRedirectUri($this->redirectUri);
+            $clientId = '263415563843-iisvu1oericu0v5mvc7bl2c1p3obq2mq.apps.googleusercontent.com';
+            $clientSecret = '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';
+            $redirectUri = 'https://app.skedi.com/oauth/google/callback';
+            
+            // Set up client configuration
+            $client->setClientId($clientId);
+            $client->setClientSecret($clientSecret);
+            $client->setRedirectUri($redirectUri);
             $client->setAccessType('offline');
             $client->setPrompt('consent');
             
-            // Set scopes
+            // Set scopes same as in getAuthUrl
             $client->setScopes([
                 'https://www.googleapis.com/auth/calendar',
-                'https://www.googleapis.com/auth/calendar.events',
+                'https://www.googleapis.com/auth/meetings.space.created',
+                'https://www.googleapis.com/auth/meetings.space.readonly',
                 'https://www.googleapis.com/auth/userinfo.email'
             ]);
             
@@ -177,9 +193,9 @@ class GoogleMeetService
             
             try {
                 // Create a new client just for this operation
-                $userClient = new \Google\Client();
-                $userClient->setClientId($this->clientId);
-                $userClient->setClientSecret($this->clientSecret);
+                $userClient = new GoogleClient();
+                $userClient->setClientId($clientId);
+                $userClient->setClientSecret($clientSecret);
                 
                 // Set the access token we received
                 $userClient->setAccessToken($accessToken);
@@ -262,11 +278,9 @@ class GoogleMeetService
                 $integration->setScopes(implode(',', $client->getScopes()));
                 
                 // Store Google email in the config
-                $config = [];
-                
-                if ($googleEmail) {
-                    $config['google_email'] = $googleEmail;
-                }
+                $config = [
+                    'google_email' => $googleEmail
+                ];
                 
                 $integration->setConfig($config);
                 $integration->setStatus('active');
@@ -284,7 +298,41 @@ class GoogleMeetService
     }
 
     /**
-     * Create Google Meet link for an event
+     * Get user's Google Meet integration
+     */
+    public function getUserIntegration(UserEntity $user, ?int $integrationId = null): ?IntegrationEntity
+    {
+        if ($integrationId) {
+            $integration = $this->integrationRepository->find($integrationId);
+            if ($integration && $integration->getUser()->getId() === $user->getId() && 
+                $integration->getProvider() === 'google_meet' && 
+                $integration->getStatus() === 'active') {
+                return $integration;
+            }
+            return null;
+        }
+        
+        // Get the most recently created active integration
+        return $this->integrationRepository->findOneBy(
+            [
+                'user' => $user,
+                'provider' => 'google_meet',
+                'status' => 'active'
+            ],
+            ['created' => 'DESC']
+        );
+    }
+    
+    /**
+     * Find a Meet event by booking ID
+     */
+    public function getMeetLinkForBooking(int $bookingId): ?GoogleMeetEventEntity
+    {
+        return $this->googleMeetEventRepository->findByBookingId($bookingId);
+    }
+    
+    /**
+     * Create a Google Meet link
      */
     public function createMeetLink(
         IntegrationEntity $integration,
@@ -302,7 +350,7 @@ class GoogleMeetService
             }
             
             $client = $this->getGoogleClient($integration);
-            $service = new \Google\Service\Calendar($client);
+            $service = new GoogleCalendar($client);
             
             // Create a new event with conference data to generate Meet link
             $event = new \Google\Service\Calendar\Event();
@@ -387,7 +435,7 @@ class GoogleMeetService
             }
             
             // Create the event in a temporary calendar to generate Meet link
-            $calendarId = $options['calendar_id'] ?? 'primary';
+            $calendarId = 'primary';
             $createdEvent = $service->events->insert($calendarId, $event, ['conferenceDataVersion' => 1]);
             
             // Extract Meet conference data
@@ -456,105 +504,21 @@ class GoogleMeetService
             throw new IntegrationException('Failed to create Google Meet link: ' . $e->getMessage());
         }
     }
-
-    /**
-     * Get Google Meet link for a booking
-     */
-    public function getMeetLinkForBooking(int $bookingId): ?GoogleMeetEventEntity
-    {
-        return $this->googleMeetEventRepository->findByBookingId($bookingId);
-    }
-
-    /**
-     * Cancel a Google Meet event
-     */
-    public function cancelMeetEvent(GoogleMeetEventEntity $meetEvent): bool
-    {
-        try {
-            $integration = $meetEvent->getIntegration();
-            
-            if ($integration->getTokenExpires() && $integration->getTokenExpires() < new DateTime()) {
-                $this->refreshToken($integration);
-            }
-            
-            // Mark the Meet event as cancelled in our database
-            $meetEvent->setStatus('cancelled');
-            $this->entityManager->persist($meetEvent);
-            $this->entityManager->flush();
-            
-            return true;
-        } catch (\Exception $e) {
-            return false;
-        }
-    }
-
-    /**
-     * Clean up expired Google Meet events older than the retention period
-     */
-    public function cleanupExpiredMeetEvents(int $retentionDays = 7): int
-    {
-        $cutoffDate = new DateTime("-{$retentionDays} days");
-        $expiredMeetings = $this->googleMeetEventRepository->findExpiredMeetings($cutoffDate);
-        
-        $removedCount = 0;
-        foreach ($expiredMeetings as $meeting) {
-            $this->entityManager->remove($meeting);
-            $removedCount++;
-        }
-        
-        $this->entityManager->flush();
-        return $removedCount;
-    }
-
-    /**
-     * Get Google Client instance
-     */
-    private function getGoogleClient(IntegrationEntity $integration): \Google\Client
-    {
-        $client = new \Google\Client();
-        
-        // Set client parameters
-        $client->setClientId($this->clientId);
-        $client->setClientSecret($this->clientSecret);
-        $client->setRedirectUri($this->redirectUri);
-        
-        // Set scopes 
-        $client->setScopes([
-            'https://www.googleapis.com/auth/calendar',
-            'https://www.googleapis.com/auth/calendar.events'
-        ]);
-        
-        // Standard OAuth parameters
-        $client->setAccessType('offline');
-        $client->setPrompt('consent');
-        $client->setIncludeGrantedScopes(true);
-        
-        // Handle existing tokens if integration provided
-        if ($integration->getAccessToken()) {
-            // Simplified token handling
-            $tokenData = ['access_token' => $integration->getAccessToken()];
-            
-            if ($integration->getRefreshToken()) {
-                $tokenData['refresh_token'] = $integration->getRefreshToken();
-            }
-            
-            $client->setAccessToken($tokenData);
-        }
-        
-        return $client;
-    }
-
+    
     /**
      * Refresh token
      */
-    private function refreshToken(IntegrationEntity $integration): void
+    private function refreshToken(IntegrationEntity $integration, GoogleClient $client = null): void
     {
+        if (!$client) {
+            $client = $this->getGoogleClient($integration);
+        }
+        
         if (!$integration->getRefreshToken()) {
             throw new IntegrationException('No refresh token available');
         }
         
         try {
-            $client = $this->getGoogleClient($integration);
             $accessToken = $client->fetchAccessTokenWithRefreshToken($integration->getRefreshToken());
             
             if (isset($accessToken['error'])) {
