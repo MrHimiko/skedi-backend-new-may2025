@@ -39,13 +39,53 @@ class OutlookCalendarController extends AbstractController
             $authUrl = $this->outlookCalendarService->getAuthUrl();
             
             return $this->responseService->json(true, 'retrieve', [
-                'auth_url' => $authUrl
+                'auth_url' => $authUrl,
+                'client_id' => $this->outlookCalendarService->getClientId(),
+                'redirect_uri' => $this->outlookCalendarService->getRedirectUri(),
+                'tenant_id' => $this->outlookCalendarService->getTenantId()
             ]);
         } catch (\Exception $e) {
+            $this->logger->error('Error generating auth URL: ' . $e->getMessage());
             return $this->responseService->json(false, $e->getMessage(), null, 500);
         }
     }
-    
+
+     /**
+     * Force reconnection by removing existing integration
+     */
+    #[Route('/user/integrations/outlook/reconnect', name: 'outlook_reconnect#', methods: ['POST'])]
+    public function forceReconnect(Request $request): JsonResponse
+    {
+        $user = $request->attributes->get('user');
+        
+        try {
+            // Find all existing integrations
+            $integrations = $this->entityManager->getRepository('App\Plugins\Integrations\Entity\IntegrationEntity')
+                ->findBy([
+                    'user' => $user,
+                    'provider' => 'outlook_calendar',
+                ]);
+            
+            $count = count($integrations);
+            
+            // Delete them all to start fresh
+            foreach ($integrations as $integration) {
+                $this->entityManager->remove($integration);
+            }
+            
+            $this->entityManager->flush();
+            
+            // Generate a new auth URL
+            $authUrl = $this->outlookCalendarService->getAuthUrl();
+            
+            return $this->responseService->json(true, 'Cleared ' . $count . ' existing integrations. Please reconnect.', [
+                'auth_url' => $authUrl
+            ]);
+        } catch (\Exception $e) {
+            return $this->responseService->json(false, 'Failed to reset integration: ' . $e->getMessage(), null, 500);
+        }
+    }
+
     /**
      * Handle Outlook OAuth callback
      */
@@ -298,15 +338,134 @@ class OutlookCalendarController extends AbstractController
             $integration = $this->outlookCalendarService->getUserIntegration($user, $integrationId);
             
             if (!$integration) {
-                return $this->responseService->json(false, 'Outlook Calendar integration not found. Please connect your calendar first.', null, 404);
+                return $this->responseService->json(false, 'Outlook Calendar integration not found.', null, 404);
             }
             
-            $testResult = $this->outlookCalendarService->testOutlookConnection($integration);
+            // Get raw token for inspection
+            $accessToken = $integration->getAccessToken();
+            $tokenParts = explode(".", $accessToken);
             
-            return $this->responseService->json(true, 'Test completed', $testResult);
+            // Only proceed if token is properly formatted
+            $tokenInfo = ['valid_format' => false];
+            if (count($tokenParts) === 3) {
+                $tokenInfo['valid_format'] = true;
+                
+                // Get header
+                try {
+                    $header = json_decode(base64_decode(str_replace('_', '/', str_replace('-','+', $tokenParts[0]))), true);
+                    $tokenInfo['header'] = $header;
+                } catch (\Exception $e) {
+                    $tokenInfo['header_error'] = $e->getMessage();
+                }
+                
+                // Get payload
+                try {
+                    $payload = json_decode(base64_decode(str_replace('_', '/', str_replace('-','+', $tokenParts[1]))), true);
+                    $tokenInfo['payload'] = $payload;
+                    
+                    // Extract key information
+                    $tokenInfo['app_id'] = $payload['appid'] ?? 'unknown';
+                    $tokenInfo['scopes'] = $payload['scp'] ?? 'unknown';
+                    $tokenInfo['user_id'] = $payload['oid'] ?? 'unknown';
+                    $tokenInfo['expires'] = isset($payload['exp']) ? date('Y-m-d H:i:s', $payload['exp']) : 'unknown';
+                    $tokenInfo['issued'] = isset($payload['iat']) ? date('Y-m-d H:i:s', $payload['iat']) : 'unknown';
+                } catch (\Exception $e) {
+                    $tokenInfo['payload_error'] = $e->getMessage();
+                }
+            }
+            
+            // Test calendar endpoints
+            $endpoints = [
+                'me' => 'https://graph.microsoft.com/v1.0/me',
+                'calendars' => 'https://graph.microsoft.com/v1.0/me/calendars',
+                'calendar' => 'https://graph.microsoft.com/v1.0/me/calendar',
+                'events' => 'https://graph.microsoft.com/v1.0/me/events',
+            ];
+            
+            $testResults = [];
+            $client = new \GuzzleHttp\Client(['http_errors' => false]);
+            
+            foreach ($endpoints as $name => $url) {
+                try {
+                    $response = $client->get($url, [
+                        'headers' => [
+                            'Authorization' => 'Bearer ' . $accessToken,
+                            'Accept' => 'application/json'
+                        ]
+                    ]);
+                    
+                    $statusCode = $response->getStatusCode();
+                    $responseBody = $response->getBody()->getContents();
+                    
+                    $testResults[$name] = [
+                        'status_code' => $statusCode,
+                        'success' => $statusCode >= 200 && $statusCode < 300
+                    ];
+                    
+                    if ($statusCode >= 200 && $statusCode < 300) {
+                        $data = json_decode($responseBody, true);
+                        $testResults[$name]['response'] = $data;
+                    } else {
+                        $testResults[$name]['error'] = json_decode($responseBody, true) ?? $responseBody;
+                    }
+                } catch (\Exception $e) {
+                    $testResults[$name] = [
+                        'status_code' => 0,
+                        'success' => false,
+                        'exception' => $e->getMessage()
+                    ];
+                }
+            }
+            
+            // Check app registration in Azure
+            $azureConfig = [
+                'client_id' => $this->outlookCalendarService->getClientId(),
+                'redirect_uri' => $this->outlookCalendarService->getRedirectUri(),
+                'expected_permissions' => [
+                    'Calendars.Read',
+                    'Calendars.ReadWrite',
+                    'User.Read'
+                ]
+            ];
+            
+            // Try to refresh the token
+            $refreshResults = ['attempted' => false];
+            if ($request->query->has('try_refresh') && $request->query->get('try_refresh') === 'true') {
+                $refreshResults['attempted'] = true;
+                try {
+                    $this->outlookCalendarService->refreshToken($integration);
+                    $refreshResults['success'] = true;
+                    $refreshResults['new_expires'] = $integration->getTokenExpires()->format('Y-m-d H:i:s');
+                } catch (\Exception $e) {
+                    $refreshResults['success'] = false;
+                    $refreshResults['error'] = $e->getMessage();
+                }
+            }
+            
+            return $this->responseService->json(true, 'Advanced test completed', [
+                'integration' => [
+                    'id' => $integration->getId(),
+                    'name' => $integration->getName(),
+                    'provider' => $integration->getProvider(),
+                    'status' => $integration->getStatus(),
+                    'token_expires' => $integration->getTokenExpires() ? $integration->getTokenExpires()->format('Y-m-d H:i:s') : null,
+                    'last_synced' => $integration->getLastSynced() ? $integration->getLastSynced()->format('Y-m-d H:i:s') : null,
+                    'scopes_stored' => $integration->getScopes(),
+                    'has_refresh_token' => !empty($integration->getRefreshToken()),
+                ],
+                'token_analysis' => $tokenInfo,
+                'endpoint_tests' => $testResults,
+                'azure_config' => $azureConfig,
+                'refresh_attempt' => $refreshResults,
+                'reconnect_url' => $this->generateUrl('outlook_reconnect#'),
+                'auth_url' => $this->outlookCalendarService->getAuthUrl()
+            ]);
         } catch (\Exception $e) {
-            return $this->responseService->json(false, $e->getMessage(), null, 500);
+            return $this->responseService->json(false, 'Advanced test failed: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString()
+            ], 500);
         }
+        
     }
 
     /**

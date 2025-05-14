@@ -33,6 +33,7 @@ use Http\Promise\Promise;
 use Http\Promise\FulfilledPromise;
 use Http\Promise\RejectedPromise;
 
+
 /**
  * Custom AuthenticationProvider for existing tokens
  */
@@ -196,14 +197,21 @@ class OutlookCalendarService extends IntegrationService
         $tenant = $this->tenantId ?: 'common';
         $authUrl = "https://login.microsoftonline.com/$tenant/oauth2/v2.0/authorize";
         
+        $scopes = [
+            'offline_access',
+            'Calendars.Read',
+            'Calendars.ReadWrite', 
+            'User.Read'
+        ];
+        
         $params = [
             'client_id' => $this->clientId,
             'response_type' => 'code',
             'redirect_uri' => $this->redirectUri,
             'response_mode' => 'query',
-            'scope' => 'https://graph.microsoft.com/.default offline_access',
+            'scope' => implode(' ', $scopes),
             'state' => uniqid('', true),
-            'prompt' => 'consent'  // Force consent dialog to appear
+            'prompt' => 'consent'  
         ];
         
         return $authUrl . '?' . http_build_query($params);
@@ -218,7 +226,17 @@ class OutlookCalendarService extends IntegrationService
             $tenant = $this->tenantId ?: 'common';
             $tokenUrl = "https://login.microsoftonline.com/$tenant/oauth2/v2.0/token";
             
-            $client = new \GuzzleHttp\Client();
+            $scopes = [
+                'offline_access',
+                'Calendars.Read',
+                'Calendars.ReadWrite',
+                'User.Read'
+            ];
+            
+            $client = new \GuzzleHttp\Client([
+                'http_errors' => false
+            ]);
+            
             $response = $client->post($tokenUrl, [
                 'form_params' => [
                     'client_id' => $this->clientId,
@@ -226,7 +244,7 @@ class OutlookCalendarService extends IntegrationService
                     'code' => $code,
                     'redirect_uri' => $this->redirectUri,
                     'grant_type' => 'authorization_code',
-                    'scope' => 'https://graph.microsoft.com/.default offline_access'
+                    'scope' => implode(' ', $scopes)
                 ]
             ]);
             
@@ -378,7 +396,18 @@ class OutlookCalendarService extends IntegrationService
             $tenant = $this->tenantId ?: 'common';
             $tokenUrl = "https://login.microsoftonline.com/$tenant/oauth2/v2.0/token";
             
-            $client = new \GuzzleHttp\Client();
+            $scopes = [
+                'offline_access',
+                'Calendars.Read',
+                'Calendars.ReadWrite',
+                'User.Read'
+            ];
+            
+            $client = new \GuzzleHttp\Client([
+                'http_errors' => false,
+                'timeout' => 15
+            ]);
+            
             $response = $client->post($tokenUrl, [
                 'form_params' => [
                     'client_id' => $this->clientId,
@@ -386,9 +415,8 @@ class OutlookCalendarService extends IntegrationService
                     'refresh_token' => $integration->getRefreshToken(),
                     'redirect_uri' => $this->redirectUri,
                     'grant_type' => 'refresh_token',
-                    'scope' => 'https://graph.microsoft.com/.default offline_access'
-                ],
-                'http_errors' => false
+                    'scope' => implode(' ', $scopes)
+                ]
             ]);
 
             $statusCode = $response->getStatusCode();
