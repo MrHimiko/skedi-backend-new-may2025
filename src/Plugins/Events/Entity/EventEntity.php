@@ -42,6 +42,9 @@ class EventEntity
     #[ORM\Column(name: "schedule", type: "json", nullable: true)]
     private ?array $schedule = null;
 
+    #[ORM\Column(name: "location", type: "json", nullable: true)]
+    private ?array $location = null;
+
     #[ORM\Column(name: "availability_type", type: "string", length: 50, nullable: false, options: ["default" => "one_host_available"])]
     private string $availabilityType = 'one_host_available';
 
@@ -246,6 +249,21 @@ class EventEntity
     {
         return $this->created;
     }
+
+
+
+
+    public function getLocation(): ?array
+    {
+        return $this->location;
+    }
+
+    public function setLocation($location): self
+    {
+        $this->location = $location;
+        return $this;
+    }
+
 
     public function toArray(): array
     {

@@ -118,6 +118,9 @@ class EventController extends AbstractController
             
             // Add schedule to response
             $eventData['schedule'] = $event->getSchedule();
+
+            // Add location to response
+            $eventData['location'] = $event->getLocation();
             
             // Add form fields
             $formFields = $this->eventService->getFormFields($event);

@@ -122,6 +122,9 @@ class EventService
                 'acceptance_required' => new Assert\Optional([
                     new Assert\Type('bool')
                 ]),
+                'location' => new Assert\Optional([
+                    new Assert\Type(['type' => ['string', 'array', 'object']]),
+                ]),
             ];
             
             $transform = [
@@ -231,6 +234,9 @@ class EventService
                 ]),
                 'acceptanceRequired' => new Assert\Optional([
                     new Assert\Type('bool')
+                ]),
+                'location' => new Assert\Optional([
+                    new Assert\Type(['type' => ['string', 'array', 'object']]),
                 ]),
             ];
             
