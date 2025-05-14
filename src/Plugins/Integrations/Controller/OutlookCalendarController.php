@@ -309,7 +309,6 @@ class OutlookCalendarController extends AbstractController
         }
     }
 
-
     /**
      * Reset Outlook token (force refresh)
      */

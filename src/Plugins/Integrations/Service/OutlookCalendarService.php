@@ -45,12 +45,15 @@ class DirectAuthenticationProvider implements AuthenticationProvider
     {
         $this->accessToken = $accessToken;
         $this->allowedHostsValidator = new AllowedHostsValidator();
+        
+        // Ensure all Graph API endpoints are allowed
         $this->allowedHostsValidator->setAllowedHosts([
             "graph.microsoft.com",
             "graph.microsoft.us",
             "dod-graph.microsoft.us",
             "graph.microsoft.de",
-            "microsoftgraph.chinacloudapi.cn"
+            "microsoftgraph.chinacloudapi.cn",
+            "outlook.office.com"
         ]);
     }
     
@@ -58,13 +61,19 @@ class DirectAuthenticationProvider implements AuthenticationProvider
         \Microsoft\Kiota\Abstractions\RequestInformation $request,
         array $additionalAuthenticationContext = []
     ): Promise {
+        // First validate the host
         if (!$this->allowedHostsValidator->isUrlHostValid($request->getUri())) {
             return new RejectedPromise(
-                new \InvalidArgumentException("Url host is not valid")
+                new \InvalidArgumentException("Url host is not valid: " . $request->getUri())
             );
         }
         
+        // Set authorization header
         $request->addHeader('Authorization', 'Bearer ' . $this->accessToken);
+        
+        // Add additional headers for compatibility
+        $request->addHeader('Accept', 'application/json');
+        
         return new FulfilledPromise(null);
     }
     
@@ -162,14 +171,21 @@ class OutlookCalendarService extends IntegrationService
             $this->refreshToken($integration);
         }
         
-        // Create an auth provider with the access token
-        $authProvider = new DirectAuthenticationProvider($integration->getAccessToken());
-        
-        // Create a request adapter with the auth provider
-        $adapter = new GuzzleRequestAdapter($authProvider);
-        
-        // Create the GraphServiceClient with the adapter using the static factory method
-        return GraphServiceClient::createWithRequestAdapter($adapter);
+        try {
+            // Create an auth provider with the updated token
+            $authProvider = new DirectAuthenticationProvider($integration->getAccessToken());
+            
+            // Create a request adapter with the auth provider
+            $adapter = new GuzzleRequestAdapter($authProvider);
+            
+            // Set explicit base URL to ensure consistent endpoint access
+            $adapter->setBaseUrl('https://graph.microsoft.com/v1.0');
+            
+            // Create the GraphServiceClient with the adapter
+            return GraphServiceClient::createWithRequestAdapter($adapter);
+        } catch (\Exception $e) {
+            throw new IntegrationException('Failed to create Graph client: ' . $e->getMessage());
+        }
     }
 
     /**
@@ -185,8 +201,9 @@ class OutlookCalendarService extends IntegrationService
             'response_type' => 'code',
             'redirect_uri' => $this->redirectUri,
             'response_mode' => 'query',
-            'scope' => 'offline_access User.Read Calendars.ReadWrite',
+            'scope' => 'https://graph.microsoft.com/.default offline_access',
             'state' => uniqid('', true),
+            'prompt' => 'consent'  // Force consent dialog to appear
         ];
         
         return $authUrl . '?' . http_build_query($params);
@@ -201,14 +218,15 @@ class OutlookCalendarService extends IntegrationService
             $tenant = $this->tenantId ?: 'common';
             $tokenUrl = "https://login.microsoftonline.com/$tenant/oauth2/v2.0/token";
             
-            $client = new HttpClient();
+            $client = new \GuzzleHttp\Client();
             $response = $client->post($tokenUrl, [
                 'form_params' => [
                     'client_id' => $this->clientId,
                     'client_secret' => $this->clientSecret,
                     'code' => $code,
                     'redirect_uri' => $this->redirectUri,
-                    'grant_type' => 'authorization_code'
+                    'grant_type' => 'authorization_code',
+                    'scope' => 'https://graph.microsoft.com/.default offline_access'
                 ]
             ]);
             
@@ -368,11 +386,11 @@ class OutlookCalendarService extends IntegrationService
                     'refresh_token' => $integration->getRefreshToken(),
                     'redirect_uri' => $this->redirectUri,
                     'grant_type' => 'refresh_token',
-                    'scope' => 'offline_access User.Read Calendars.ReadWrite'
+                    'scope' => 'https://graph.microsoft.com/.default offline_access'
                 ],
-                'http_errors' => false // Don't throw exceptions for HTTP errors
+                'http_errors' => false
             ]);
-            
+
             $statusCode = $response->getStatusCode();
             $responseBody = json_decode((string) $response->getBody(), true);
             
@@ -440,40 +458,79 @@ class OutlookCalendarService extends IntegrationService
     public function getCalendars(IntegrationEntity $integration): array
     {
         try {
-            $graph = $this->getGraphClient($integration);
+            $accessToken = $integration->getAccessToken();
             
-            // Fetch calendars using the v2 SDK
-            $calendars = $graph->me()->calendars()->get()->wait();
+            // Use direct API call since the token is valid for Graph API
+            $client = new \GuzzleHttp\Client([
+                'http_errors' => false,
+                'timeout' => 15
+            ]);
             
-            $result = [];
+            // Try different Graph API endpoints
+            $endpoints = [
+                'v1_calendars' => 'https://graph.microsoft.com/v1.0/me/calendars',
+                'v1_calendar' => 'https://graph.microsoft.com/v1.0/me/calendar',
+                'beta_calendars' => 'https://graph.microsoft.com/beta/me/calendars'
+            ];
             
-            foreach ($calendars->getValue() as $calendar) {
-                $result[] = [
-                    'id' => $calendar->getId(),
-                    'name' => $calendar->getName(),
-                    'color' => $calendar->getColor(),
-                    'is_default' => $calendar->getIsDefaultCalendar(),
-                    'can_edit' => $calendar->getCanEdit(),
-                    'can_share' => $calendar->getCanShare(),
-                    'can_view_private_items' => $calendar->getCanViewPrivateItems(),
-                    'owner' => [
-                        'name' => $calendar->getOwner() ? $calendar->getOwner()->getName() : null,
-                        'address' => $calendar->getOwner() ? $calendar->getOwner()->getAddress() : null
+            $results = [];
+            $calendars = [];
+            
+            foreach ($endpoints as $name => $url) {
+                $response = $client->get($url, [
+                    'headers' => [
+                        'Authorization' => 'Bearer ' . $accessToken,
+                        'Accept' => 'application/json'
                     ]
-                ];
+                ]);
+                
+                $statusCode = $response->getStatusCode();
+                $results[$name] = ['status_code' => $statusCode];
+                
+                if ($statusCode === 200) {
+                    $responseBody = $response->getBody()->getContents();
+                    $data = json_decode($responseBody, true);
+                    
+                    if ($name === 'v1_calendar') {
+                        // Single calendar endpoint
+                        if (isset($data['id'])) {
+                            $calendars[] = [
+                                'id' => $data['id'],
+                                'name' => $data['name'] ?? 'Default Calendar',
+                                'endpoint' => $name
+                            ];
+                        }
+                    } else {
+                        // Multiple calendars endpoint
+                        if (isset($data['value']) && is_array($data['value'])) {
+                            foreach ($data['value'] as $calendar) {
+                                $calendars[] = [
+                                    'id' => $calendar['id'],
+                                    'name' => $calendar['name'] ?? 'Unnamed Calendar',
+                                    'endpoint' => $name
+                                ];
+                            }
+                        }
+                    }
+                    
+                    // If we found calendars, break out of the loop
+                    if (!empty($calendars)) {
+                        break;
+                    }
+                }
             }
             
-            // Update the integration with the calendar list
+            // Update the integration with the results
             $config = $integration->getConfig() ?: [];
-            $config['calendars'] = $result;
+            $config['calendars'] = $calendars;
+            $config['calendar_api_results'] = $results;
             $integration->setConfig($config);
             
             $this->entityManager->persist($integration);
             $this->entityManager->flush();
             
-            return $result;
+            return $calendars;
         } catch (\Exception $e) {
-            $this->logger->error('Error fetching calendars: ' . $e->getMessage());
             throw new IntegrationException('Failed to fetch calendars: ' . $e->getMessage());
         }
     }
@@ -951,56 +1008,142 @@ class OutlookCalendarService extends IntegrationService
     /**
      * Test Outlook Calendar API connection
      */
-    public function testOutlookConnection(IntegrationEntity $integration): array
+    public function testOutlookConnection(\App\Plugins\Integrations\Entity\IntegrationEntity $integration): array
     {
         try {
-            // Check token expiration
-            if ($integration->getTokenExpires() && $integration->getTokenExpires() < new DateTime()) {
-                try {
-                    $this->refreshToken($integration);
-                    return [
-                        'status' => 'refreshed',
-                        'message' => 'Token was expired and has been refreshed',
-                        'expires' => $integration->getTokenExpires()->format('Y-m-d H:i:s')
-                    ];
-                } catch (\Exception $e) {
-                    return [
-                        'status' => 'refresh_failed',
-                        'message' => 'Token refresh failed: ' . $e->getMessage()
-                    ];
+            // Get token details
+            $accessToken = $integration->getAccessToken();
+            $tokenParts = explode(".", $accessToken);
+            $tokenPayload = json_decode(base64_decode(str_replace('_', '/', str_replace('-','+', $tokenParts[1]))), true);
+            
+            $tokenDetails = [
+                'scopes' => $tokenPayload['scp'] ?? 'unknown',
+                'app_id' => $tokenPayload['appid'] ?? 'unknown',
+                'tenant_id' => $tokenPayload['tid'] ?? 'unknown',
+                'expires' => date('Y-m-d H:i:s', $tokenPayload['exp'] ?? 0),
+                'user_id' => $tokenPayload['oid'] ?? 'unknown',
+                'username' => $tokenPayload['name'] ?? 'unknown'
+            ];
+            
+            // Use direct API calls
+            $client = new \GuzzleHttp\Client([
+                'http_errors' => false,
+                'timeout' => 15
+            ]);
+            
+            // Test various Graph API endpoints
+            $endpoints = [
+                'profile' => 'https://graph.microsoft.com/v1.0/me',
+                'default_calendar' => 'https://graph.microsoft.com/v1.0/me/calendar',
+                'calendars' => 'https://graph.microsoft.com/v1.0/me/calendars',
+                'calendar_view' => 'https://graph.microsoft.com/v1.0/me/calendarView?startDateTime=2025-05-01T00:00:00Z&endDateTime=2025-05-30T23:59:59Z',
+                'events' => 'https://graph.microsoft.com/v1.0/me/events',
+                'beta_calendars' => 'https://graph.microsoft.com/beta/me/calendars',
+                'beta_calendar' => 'https://graph.microsoft.com/beta/me/calendar'
+            ];
+            
+            $endpointResults = [];
+            
+            foreach ($endpoints as $name => $url) {
+                $response = $client->get($url, [
+                    'headers' => [
+                        'Authorization' => 'Bearer ' . $accessToken,
+                        'Accept' => 'application/json',
+                        'Prefer' => 'outlook.timezone="UTC"'
+                    ]
+                ]);
+                
+                $statusCode = $response->getStatusCode();
+                $responseBody = $response->getBody()->getContents();
+                
+                $endpointResults[$name] = [
+                    'status_code' => $statusCode,
+                    'success' => $statusCode >= 200 && $statusCode < 300
+                ];
+                
+                if ($statusCode >= 200 && $statusCode < 300) {
+                    $responseData = json_decode($responseBody, true);
+                    $endpointResults[$name]['data'] = $responseData;
+                    
+                    // If this is a calendars endpoint, include some calendar info
+                    if (in_array($name, ['calendars', 'beta_calendars']) && isset($responseData['value'])) {
+                        $endpointResults[$name]['calendars_count'] = count($responseData['value']);
+                        
+                        if (count($responseData['value']) > 0) {
+                            $sample = $responseData['value'][0];
+                            $endpointResults[$name]['sample_calendar'] = [
+                                'id' => $sample['id'] ?? 'unknown',
+                                'name' => $sample['name'] ?? 'unknown'
+                            ];
+                        }
+                    }
+                } else {
+                    $errorData = json_decode($responseBody, true);
+                    $endpointResults[$name]['error'] = $errorData ?? $responseBody;
                 }
             }
             
-            // Test API access
-            $client = new \GuzzleHttp\Client();
-            $response = $client->get('https://graph.microsoft.com/v1.0/me/calendars', [
-                'headers' => [
-                    'Authorization' => 'Bearer ' . $integration->getAccessToken()
-                ],
-                'http_errors' => false
-            ]);
+            // Determine overall status
+            $profileSuccess = $endpointResults['profile']['success'] ?? false;
+            $anyCalendarSuccess = ($endpointResults['default_calendar']['success'] ?? false) || 
+                                 ($endpointResults['calendars']['success'] ?? false) || 
+                                 ($endpointResults['beta_calendars']['success'] ?? false) ||
+                                 ($endpointResults['beta_calendar']['success'] ?? false);
             
-            if ($response->getStatusCode() === 200) {
-                $data = json_decode($response->getBody()->getContents(), true);
-                return [
-                    'status' => 'success',
-                    'message' => 'Successfully connected to Outlook Calendar API',
-                    'calendars_count' => count($data['value'] ?? []),
-                    'expires' => $integration->getTokenExpires()->format('Y-m-d H:i:s')
+            if (!$profileSuccess) {
+                $status = 'invalid';
+                $recommendations = ['Your token appears to be invalid. Try reconnecting your Outlook account.'];
+            } else if (!$anyCalendarSuccess) {
+                $status = 'missing_calendar_permissions';
+                $recommendations = [
+                    'You have a valid token, but it\'s missing calendar permissions. Try reconnecting and ensuring you grant calendar access.',
+                    'Check if there are any Conditional Access policies in your organization that might be blocking calendar access.'
                 ];
             } else {
-                return [
-                    'status' => 'api_error',
-                    'message' => 'API returned status code: ' . $response->getStatusCode(),
-                    'response' => $response->getBody()->getContents()
-                ];
+                $status = 'success';
+                $recommendations = ['Your connection is working properly.'];
             }
+            
+            return [
+                'status' => $status,
+                'message' => 'Connection test completed',
+                'token_details' => $tokenDetails,
+                'endpoints' => $endpointResults,
+                'recommendations' => $recommendations
+            ];
         } catch (\Exception $e) {
             return [
                 'status' => 'error',
-                'message' => 'Exception: ' . $e->getMessage()
+                'message' => 'Exception during test: ' . $e->getMessage(),
+                'trace' => $e->getTraceAsString()
             ];
         }
+    }
+    
+    private function getRecommendations(string $token_status, array $endpointResults): array
+    {
+        $recommendations = [];
+        
+        switch ($token_status) {
+            case 'invalid':
+                $recommendations[] = "Your token appears to be invalid. Try reconnecting your Outlook account.";
+                break;
+                
+            case 'missing_calendar_permissions':
+                $recommendations[] = "You have a valid token, but it's missing calendar permissions. Try reconnecting and ensuring you grant calendar access.";
+                $recommendations[] = "Check if there are any Conditional Access policies in your organization that might be blocking calendar access.";
+                break;
+                
+            case 'valid':
+                if (!$endpointResults['calendars']['success']) {
+                    $recommendations[] = "Some endpoints are working but the calendars endpoint is failing. Try using the default calendar instead.";
+                } else {
+                    $recommendations[] = "Your connection is working properly.";
+                }
+                break;
+        }
+        
+        return $recommendations;
     }
 
 }
