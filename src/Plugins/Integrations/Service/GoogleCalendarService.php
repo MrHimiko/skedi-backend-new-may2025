@@ -821,57 +821,29 @@ class GoogleCalendarService extends IntegrationService
 
     /**
      * Create an event in Google Calendar
-     */
+    */
+
     public function createCalendarEvent(
         IntegrationEntity $integration,
         string $title,
-        DateTimeInterface $startTime,
-        DateTimeInterface $endTime,
+        DateTimeInterface $startDateTime,
+        DateTimeInterface $endDateTime,
         array $options = []
     ): array {
         try {
-            $user = $integration->getUser();
-            $client = $this->getGoogleClient($integration);
-            
             // Check if token needs refresh
             if ($integration->getTokenExpires() && $integration->getTokenExpires() < new DateTime()) {
-                $this->refreshToken($integration, $client);
+                $this->refreshToken($integration);
             }
             
+            $client = $this->getGoogleClient($integration);
             $service = new GoogleCalendar($client);
             
-            // Default to primary calendar if not specified
-            $calendarId = $options['calendar_id'] ?? 'primary';
-            
-            // Create event
+            // Create a new event
             $event = new \Google\Service\Calendar\Event();
             $event->setSummary($title);
             
-            // Add extended properties to mark this as our own event
-            $extendedProperties = new \Google\Service\Calendar\EventExtendedProperties();
-            $private = ['skedi_event' => 'true'];
-            $extendedProperties->setPrivate($private);
-            $event->setExtendedProperties($extendedProperties);
-            
-            // Set description if provided
-            if (!empty($options['description'])) {
-                $event->setDescription($options['description']);
-            }
-            
-            // Set location if provided
-            if (!empty($options['location'])) {
-                $event->setLocation($options['location']);
-            }
-            
-            // Set visibility/transparency
-            $transparency = $options['transparency'] ?? 'opaque'; // opaque = busy, transparent = free
-            $event->setTransparency($transparency);
-            
             // Set start and end times
-            $startDateTime = clone $startTime;
-            $endDateTime = clone $endTime;
-            
-            // Convert to RFC3339 format required by Google
             $start = new \Google\Service\Calendar\EventDateTime();
             $start->setDateTime($startDateTime->format('c'));
             $event->setStart($start);
@@ -880,66 +852,174 @@ class GoogleCalendarService extends IntegrationService
             $end->setDateTime($endDateTime->format('c'));
             $event->setEnd($end);
             
-            // Set color if provided
-            if (!empty($options['color_id'])) {
-                $event->setColorId($options['color_id']);
+            // Set description if provided
+            if (!empty($options['description'])) {
+                $event->setDescription($options['description']);
             }
             
             // Add attendees if provided
             if (!empty($options['attendees']) && is_array($options['attendees'])) {
                 $attendees = [];
-                foreach ($options['attendees'] as $attendee) {
-                    $eventAttendee = new \Google\Service\Calendar\EventAttendee();
-                    $eventAttendee->setEmail($attendee['email']);
-                    
-                    if (isset($attendee['name'])) {
-                        $eventAttendee->setDisplayName($attendee['name']);
+                foreach ($options['attendees'] as $attendeeData) {
+                    if (isset($attendeeData['email'])) {
+                        $attendee = new \Google\Service\Calendar\EventAttendee();
+                        $attendee->setEmail($attendeeData['email']);
+                        if (!empty($attendeeData['name'])) {
+                            $attendee->setDisplayName($attendeeData['name']);
+                        }
+                        $attendees[] = $attendee;
                     }
-                    
-                    if (isset($attendee['optional']) && $attendee['optional'] === true) {
-                        $eventAttendee->setOptional(true);
-                    }
-                    
-                    $attendees[] = $eventAttendee;
                 }
-                $event->setAttendees($attendees);
+                
+                if (!empty($attendees)) {
+                    $event->setAttendees($attendees);
+                }
             }
             
-            // Add reminders if provided
-            if (!empty($options['reminders']) && is_array($options['reminders'])) {
-                $reminders = new \Google\Service\Calendar\EventReminders();
-                $reminderItems = [];
+            // Add conference data if provided (METHOD 1 - Use existing link)
+            $hasConferenceData = false;
+            $methodUsed = 'none';
+            
+            if (!empty($options['conference_data']) && isset($options['conference_data']['type']) 
+                && $options['conference_data']['type'] === 'hangoutsMeet' 
+                && isset($options['conference_data']['link'])) {
                 
-                foreach ($options['reminders'] as $reminder) {
-                    $eventReminder = new \Google\Service\Calendar\EventReminder();
-                    $eventReminder->setMethod($reminder['method'] ?? 'popup');
-                    $eventReminder->setMinutes($reminder['minutes'] ?? 30);
-                    $reminderItems[] = $eventReminder;
+                $meetLink = $options['conference_data']['link'];
+                error_log("Found Meet link: " . $meetLink);  // Debug log
+                
+                try {
+                    // Create a conferenceData object with the existing Meet link
+                    $conferenceData = new \Google\Service\Calendar\ConferenceData();
+                    
+                    // Extract conference ID from meet link if possible
+                    $conferenceId = null;
+                    if (preg_match('/meet\.google\.com\/([a-z0-9\-]+)/i', $meetLink, $matches)) {
+                        $conferenceId = $matches[1];
+                        $conferenceData->setConferenceId($conferenceId);
+                        error_log("Extracted conference ID: " . $conferenceId);  // Debug log
+                    }
+                    
+                    // Set up the entry point (the meet link)
+                    $entryPoint = new \Google\Service\Calendar\EntryPoint();
+                    $entryPoint->setEntryPointType('video');
+                    $entryPoint->setUri($meetLink);
+                    $entryPoint->setLabel('Google Meet');
+                    
+                    $conferenceData->setEntryPoints([$entryPoint]);
+                    
+                    // Set up the conference solution
+                    $conferenceSolution = new \Google\Service\Calendar\ConferenceSolution();
+                    $solutionKey = new \Google\Service\Calendar\ConferenceSolutionKey();
+                    $solutionKey->setType('hangoutsMeet');
+                    $conferenceSolution->setKey($solutionKey);
+                    $conferenceData->setConferenceSolution($conferenceSolution);
+                    
+                    $event->setConferenceData($conferenceData);
+                    $hasConferenceData = true;
+                    $methodUsed = 'existing_link';
+                    error_log("Applied existing Meet link to event");  // Debug log
+                } catch (\Exception $e) {
+                    error_log("Error setting conferenceData from existing link: " . $e->getMessage());
                 }
-                
-                $reminders->setUseDefault(false);
-                $reminders->setOverrides($reminderItems);
-                $event->setReminders($reminders);
+            }
+            
+            // METHOD 2 - Create new Meet link if existing link wasn't applied
+            if (!$hasConferenceData) {
+                try {
+                    // Create a new Google Meet conference
+                    $conferenceData = new \Google\Service\Calendar\ConferenceData();
+                    $createRequest = new \Google\Service\Calendar\CreateConferenceRequest();
+                    $createRequest->setRequestId('meet_' . uniqid() . '_' . time());
+                    $createRequest->setConferenceSolutionKey(
+                        new \Google\Service\Calendar\ConferenceSolutionKey(['type' => 'hangoutsMeet'])
+                    );
+                    
+                    $conferenceData->setCreateRequest($createRequest);
+                    $event->setConferenceData($conferenceData);
+                    $hasConferenceData = true;
+                    $methodUsed = 'create_new';
+                    error_log("Created new Meet conference request");  // Debug log
+                } catch (\Exception $e) {
+                    error_log("Error creating new Meet conference: " . $e->getMessage());
+                }
+            }
+            
+            // Add source tracking if provided
+            if (!empty($options['source_id'])) {
+                $extendedProperties = new \Google\Service\Calendar\EventExtendedProperties();
+                $private = [
+                    'skedi_source_id' => $options['source_id'],
+                    'skedi_integration_id' => (string)$integration->getId()
+                ];
+                $extendedProperties->setPrivate($private);
+                $event->setExtendedProperties($extendedProperties);
             }
             
             // Create the event
-            $createdEvent = $service->events->insert($calendarId, $event);
+            $calendarId = 'primary'; // Use primary calendar by default
             
-            // Update integration's last synced time
+            // If we have conference data, we need to set conferenceDataVersion
+            $createParams = [];
+            if ($hasConferenceData) {
+                $createParams['conferenceDataVersion'] = 1;
+                error_log("Setting conferenceDataVersion=1");  // Debug log
+            }
+            
+            $createdEvent = $service->events->insert($calendarId, $event, $createParams);
+            
+            // Get the newly created meet link if one was generated
+            $meetLink = null;
+            if ($createdEvent->getConferenceData() && $createdEvent->getConferenceData()->getEntryPoints()) {
+                foreach ($createdEvent->getConferenceData()->getEntryPoints() as $entryPoint) {
+                    if ($entryPoint->getEntryPointType() === 'video') {
+                        $meetLink = $entryPoint->getUri();
+                        error_log("Found Meet link in created event: " . $meetLink);  // Debug log
+                        break;
+                    }
+                }
+            }
+            
+            // Update integration's last sync time
             $integration->setLastSynced(new DateTime());
             $this->entityManager->persist($integration);
             $this->entityManager->flush();
             
-            // Return event data
+            // Return information about the created event
             return [
                 'google_event_id' => $createdEvent->getId(),
-                'calendar_id' => $calendarId,
                 'html_link' => $createdEvent->getHtmlLink(),
-                'title' => $title,
-                'start_time' => $startTime->format('Y-m-d H:i:s'),
-                'end_time' => $endTime->format('Y-m-d H:i:s')
+                'meet_link' => $meetLink,
+                'calendar_id' => $calendarId,
+                'start_time' => $startDateTime->format('c'),
+                'end_time' => $endDateTime->format('c'),
+                'created' => new DateTime(),
+                'status' => $createdEvent->getStatus(),
+                'conference_method_used' => $methodUsed
             ];
         } catch (\Exception $e) {
+            error_log("Error in createCalendarEvent: " . $e->getMessage());
+            error_log("Trace: " . $e->getTraceAsString());
+            
+            // Check for token expired error and try to refresh
+            if (strpos($e->getMessage(), 'invalid_grant') !== false ||
+                strpos($e->getMessage(), 'invalid_token') !== false) {
+                try {
+                    $this->refreshToken($integration);
+                    // Try again with refreshed token
+                    return $this->createCalendarEvent(
+                        $integration,
+                        $title,
+                        $startDateTime,
+                        $endDateTime,
+                        $options
+                    );
+                } catch (\Exception $refreshException) {
+                    throw new IntegrationException(
+                        'Failed to refresh token and create calendar event: ' . $refreshException->getMessage()
+                    );
+                }
+            }
+            
             throw new IntegrationException('Failed to create Google Calendar event: ' . $e->getMessage());
         }
     }
