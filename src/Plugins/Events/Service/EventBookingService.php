@@ -12,9 +12,9 @@ use App\Plugins\Events\Entity\EventBookingEntity;
 use App\Plugins\Events\Entity\EventGuestEntity;
 use App\Plugins\Events\Entity\ContactEntity;
 use App\Plugins\Events\Exception\EventsException;
-use App\Plugins\Integrations\Service\GoogleCalendarService;
-use App\Plugins\Integrations\Service\OutlookCalendarService;
-use App\Plugins\Integrations\Service\GoogleMeetService;
+use App\Plugins\Integrations\Google\Calendar\Service\GoogleCalendarService;
+use App\Plugins\Integrations\Microsoft\Outlook\Service\OutlookCalendarService;
+use App\Plugins\Integrations\Google\Meet\Service\GoogleMeetService;
 
 use DateTime;
 
@@ -297,7 +297,7 @@ class EventBookingService
                         $user = $assignee->getUser();
                         
                         // Find Google Calendar integrations for this user
-                        $integrations = $this->entityManager->getRepository('App\Plugins\Integrations\Entity\IntegrationEntity')
+                        $integrations = $this->entityManager->getRepository('App\Plugins\Integrations\Common\Entity\IntegrationEntity')
                             ->findBy([
                                 'user' => $user,
                                 'provider' => 'google_calendar',
@@ -518,7 +518,7 @@ class EventBookingService
                 $user = $assignee->getUser();
                 
                 // Find any Google Calendar integrations for this user
-                $integrations = $this->entityManager->getRepository('App\Plugins\Integrations\Entity\IntegrationEntity')
+                $integrations = $this->entityManager->getRepository('App\Plugins\Integrations\Common\Entity\IntegrationEntity')
                     ->findBy([
                         'user' => $user,
                         'provider' => 'google_calendar',
@@ -645,7 +645,7 @@ class EventBookingService
                 
                 // Get active Google Calendar integrations for this user
                 $googleIntegrations = $this->crudManager->findMany(
-                    'App\Plugins\Integrations\Entity\IntegrationEntity',
+                    'App\Plugins\Integrations\Common\Common\Entity\IntegrationEntity',
                     [],
                     1,
                     10,
@@ -723,7 +723,7 @@ class EventBookingService
                 
                 // Get active Outlook Calendar integrations for this user
                 $outlookIntegrations = $this->crudManager->findMany(
-                    'App\Plugins\Integrations\Entity\IntegrationEntity',
+                    'App\Plugins\Integrations\Common\Entity\IntegrationEntity',
                     [],
                     1,
                     10,
@@ -857,7 +857,7 @@ class EventBookingService
             
             if ($integrationId) {
                 // Get specific integration by ID
-                $integration = $this->entityManager->getRepository('App\Plugins\Integrations\Entity\IntegrationEntity')
+                $integration = $this->entityManager->getRepository('App\Plugins\Integrations\Common\Entity\IntegrationEntity')
                     ->find($integrationId);
             } else {
                 // Try to get event creator's integration

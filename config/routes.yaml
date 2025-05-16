@@ -14,8 +14,20 @@ events:
     resource: ../src/Plugins/Events/Controller/
     type: attribute
 
-integrations:
-    resource: ../src/Plugins/Integrations/Controller/
+integrations_common:
+    resource: ../src/Plugins/Integrations/Common/Controller/
+    type: attribute
+
+google_calendar:
+    resource: ../src/Plugins/Integrations/Google/Calendar/Controller/
+    type: attribute
+
+google_meet:
+    resource: ../src/Plugins/Integrations/Google/Meet/Controller/
+    type: attribute
+
+microsoft_outlook:
+    resource: ../src/Plugins/Integrations/Microsoft/Outlook/Controller/
     type: attribute
 
 # billing:

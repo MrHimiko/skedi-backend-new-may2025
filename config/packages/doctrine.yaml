@@ -54,12 +54,14 @@ doctrine:
                 prefix: 'App\Plugins\Events\Entity'
                 alias: Events
 
+
             Integrations:
                 is_bundle: false
                 type: attribute
-                dir: '%kernel.project_dir%/src/Plugins/Integrations/Entity'
-                prefix: 'App\Plugins\Integrations\Entity'
-                alias: Integrations
+                dir: '%kernel.project_dir%/src/Plugins/Integrations/Common/Entity'
+                prefix: 'App\Plugins\Integrations\Common\Entity'
+                alias: Events
+
 
             # Account:
             #     is_bundle: false

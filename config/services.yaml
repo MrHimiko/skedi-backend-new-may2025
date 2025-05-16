@@ -36,10 +36,10 @@ services:
             - { name: kernel.event_listener, event: kernel.exception }
 
     # Google Calendar Service configuration
-    App\Plugins\Integrations\Service\GoogleCalendarService:
+    App\Plugins\Integrations\Google\Calendar\Service\GoogleCalendarService:
         arguments:
             $entityManager: '@doctrine.orm.entity_manager'
-            $integrationRepository: '@App\Plugins\Integrations\Repository\IntegrationRepository'
+            $integrationRepository: '@App\Plugins\Integrations\Common\Repository\IntegrationRepository'
             $userAvailabilityService: '@App\Plugins\Account\Service\UserAvailabilityService'
             $crudManager: '@App\Service\CrudManager'
             $parameterBag: '@parameter_bag'
