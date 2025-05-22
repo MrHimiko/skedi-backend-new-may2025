@@ -841,7 +841,9 @@ class OutlookCalendarService extends IntegrationService
      */
     public function getEventsForDateRange(UserEntity $user, DateTime $startDate, DateTime $endDate): array
     {
+
         try {
+
             $filters = [
                 [
                     'field' => 'startTime',
@@ -1039,7 +1041,7 @@ class OutlookCalendarService extends IntegrationService
     /**
      * Test Outlook Calendar API connection
      */
-    public function testOutlookConnection(\App\Plugins\Integrations\Entity\IntegrationEntity $integration): array
+    public function testOutlookConnection(\App\Plugins\Integrations\Microsoft\Outlook\Entity\IntegrationEntity $integration): array
     {
         try {
             // Get token details

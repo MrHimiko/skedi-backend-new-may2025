@@ -35,7 +35,7 @@ services:
         tags:
             - { name: kernel.event_listener, event: kernel.exception }
 
-    # Google Calendar Service configuration
+
     App\Plugins\Integrations\Google\Calendar\Service\GoogleCalendarService:
         arguments:
             $entityManager: '@doctrine.orm.entity_manager'
@@ -43,17 +43,9 @@ services:
             $userAvailabilityService: '@App\Plugins\Account\Service\UserAvailabilityService'
             $crudManager: '@App\Service\CrudManager'
             $parameterBag: '@parameter_bag'
+            $logger: '@logger'
 
-    Aws\S3\S3Client:
-        class: Aws\S3\S3Client
-        arguments:
-            -
-                region: '%env(CLOUDFLARE_R2_REGION)%'
-                version: 'latest'
-                credentials:
-                    key: '%env(CLOUDFLARE_R2_ACCESS_KEY_ID)%'
-                    secret: '%env(CLOUDFLARE_R2_SECRET_ACCESS_KEY)%'
-                endpoint: 'https://%env(CLOUDFLARE_R2_ACCOUNT_ID)%.r2.cloudflarestorage.com'
+
 
     # add more service definitions when explicit configuration is needed
     # please note that last definitions always *replace* previous ones

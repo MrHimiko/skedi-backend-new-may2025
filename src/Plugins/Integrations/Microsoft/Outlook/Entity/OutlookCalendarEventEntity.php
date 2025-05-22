@@ -7,7 +7,7 @@ use App\Plugins\Account\Entity\UserEntity;
 use DateTime;
 use DateTimeInterface;
 
-#[ORM\Entity(repositoryClass: "App\Plugins\Integrations\Repository\OutlookCalendarEventRepository")]
+#[ORM\Entity(repositoryClass: "App\Plugins\Integrations\Microsoft\Outlook\Repository\OutlookCalendarEventRepository")]
 #[ORM\Table(name: "integration_outlook_calendar_events")]
 #[ORM\Index(columns: ["user_id", "start_time"])]
 #[ORM\Index(columns: ["user_id", "end_time"])]

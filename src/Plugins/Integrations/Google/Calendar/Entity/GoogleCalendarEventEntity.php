@@ -7,7 +7,7 @@ use App\Plugins\Account\Entity\UserEntity;
 use DateTime;
 use DateTimeInterface;
 
-#[ORM\Entity(repositoryClass: "App\Plugins\Integrations\Repository\GoogleCalendarEventRepository")]
+#[ORM\Entity(repositoryClass: "App\Plugins\Integrations\Google\Calendar\Repository\GoogleCalendarEventRepository")]
 #[ORM\Table(name: "integration_google_calendar_events")]
 #[ORM\Index(columns: ["user_id", "start_time"])]
 #[ORM\Index(columns: ["user_id", "end_time"])]

@@ -14,7 +14,7 @@ events:
     resource: ../src/Plugins/Events/Controller/
     type: attribute
 
-integrations_common:
+integrations:
     resource: ../src/Plugins/Integrations/Common/Controller/
     type: attribute
 

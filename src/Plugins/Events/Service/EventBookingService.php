@@ -645,7 +645,7 @@ class EventBookingService
                 
                 // Get active Google Calendar integrations for this user
                 $googleIntegrations = $this->crudManager->findMany(
-                    'App\Plugins\Integrations\Common\Common\Entity\IntegrationEntity',
+                    'App\Plugins\Integrations\Common\Entity\IntegrationEntity',
                     [],
                     1,
                     10,

@@ -21,6 +21,7 @@ class IntegrationsController extends AbstractController
     private ResponseService $responseService;
     private GoogleCalendarService $googleCalendarService;
     private IntegrationService $integrationService;
+    private IntegrationRepository $IntegrationRepository;
     private OutlookCalendarService $outlookCalendarService;
 
 
@@ -29,11 +30,12 @@ class IntegrationsController extends AbstractController
         IntegrationService $integrationService,
         GoogleCalendarService $googleCalendarService,
         OutlookCalendarService $outlookCalendarService,
-        IntegrationRepository $integrationRepository,
+        IntegrationRepository $IntegrationRepository,
     ) {
         $this->responseService = $responseService;
         $this->googleCalendarService = $googleCalendarService;
         $this->integrationService = $integrationService;
+        $this->IntegrationRepository = $IntegrationRepository;
         $this->outlookCalendarService = $outlookCalendarService;
     }
     
@@ -101,6 +103,8 @@ class IntegrationsController extends AbstractController
         }
     }
 
+
+
     /**
      * Get events from all integrations
      */
@@ -113,7 +117,7 @@ class IntegrationsController extends AbstractController
         
         // Get query parameters with defaults
         $startDate = $request->query->get('start_date', 'today');
-        $endDate = $request->query->get('end_date', '+7 days');
+        $endDate = $request->query->get('end_date', '+90 days');
         $status = $request->query->get('status', 'all'); // all, confirmed, cancelled
         $sync = $request->query->get('sync', 'auto'); // auto, force, none
         $source = $request->query->get('source'); // Optional provider filter
@@ -393,9 +397,11 @@ class IntegrationsController extends AbstractController
         string $status = 'all',
         ?string $timeRange = null
     ): array {
+
         // Get events from database
         $googleEvents = $this->googleCalendarService->getEventsForDateRange($user, $startDateTime, $endDateTime);
-        
+
+
         $now = new DateTime();
         $standardizedEvents = [];
         
@@ -506,5 +512,6 @@ class IntegrationsController extends AbstractController
         return $standardizedEvents;
     }
 
+    
 
 }

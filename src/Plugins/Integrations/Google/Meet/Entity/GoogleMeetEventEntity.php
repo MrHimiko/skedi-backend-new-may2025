@@ -7,7 +7,7 @@ use App\Plugins\Account\Entity\UserEntity;
 use DateTime;
 use DateTimeInterface;
 
-#[ORM\Entity(repositoryClass: "App\Plugins\Integrations\Repository\GoogleMeetEventRepository")]
+#[ORM\Entity(repositoryClass: "App\Plugins\Integrations\Google\Meet\Repository\GoogleMeetEventRepository")]
 #[ORM\Table(name: "integration_google_meet_events")]
 #[ORM\Index(columns: ["user_id"])]
 #[ORM\Index(columns: ["integration_id"])]

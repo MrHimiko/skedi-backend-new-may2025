@@ -8,7 +8,7 @@ use App\Plugins\Account\Entity\UserEntity;
 use DateTime;
 use DateTimeInterface;
 
-#[ORM\Entity(repositoryClass: "App\Plugins\Integrations\Repository\IntegrationRepository")]
+#[ORM\Entity(repositoryClass: "App\Plugins\Integrations\Common\Repository\IntegrationRepository")]
 #[ORM\Table(name: "user_integrations")]
 class IntegrationEntity
 {

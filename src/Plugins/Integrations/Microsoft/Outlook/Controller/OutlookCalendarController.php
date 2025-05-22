@@ -60,7 +60,7 @@ class OutlookCalendarController extends AbstractController
         
         try {
             // Find all existing integrations
-            $integrations = $this->entityManager->getRepository('App\Plugins\Integrations\Entity\IntegrationEntity')
+            $integrations = $this->entityManager->getRepository('App\Plugins\Integrations\Common\Entity\IntegrationEntity')
                 ->findBy([
                     'user' => $user,
                     'provider' => 'outlook_calendar',
