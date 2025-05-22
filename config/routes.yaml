@@ -14,6 +14,10 @@ events:
     resource: ../src/Plugins/Events/Controller/
     type: attribute
 
+forms:
+    resource: ../src/Plugins/Forms/Controller/
+    type: attribute
+
 integrations:
     resource: ../src/Plugins/Integrations/Common/Controller/
     type: attribute
