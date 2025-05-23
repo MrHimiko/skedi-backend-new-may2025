@@ -115,15 +115,28 @@ class FormService
                 'slug' => function(string $value) {
                     return $this->slugService->generateSlug($value);
                 },
-                'fields' => function($value) {
-                    return is_array($value) ? $value : [];
+                'fields' => function($value) use ($form) {
+                    $fieldsArray = is_array($value) ? $value : [];
+                    $form->setFieldsJson($fieldsArray);
+                    return $fieldsArray;
                 },
-                'settings' => function($value) {
-                    return is_array($value) ? $value : [];
+                'settings' => function($value) use ($form) {
+                    $settingsArray = is_array($value) ? $value : [];
+                    $form->setSettingsJson($settingsArray);
+                    return $settingsArray;
                 },
             ];
+            
 
             $this->crudManager->create($form, $data, $constraints, $transform);
+
+            if (isset($data['fields'])) {
+                $form->setFieldsJson(is_array($data['fields']) ? $data['fields'] : []);
+            }
+            if (isset($data['settings'])) {
+                $form->setSettingsJson(is_array($data['settings']) ? $data['settings'] : []);
+            }
+            $this->entityManager->flush();
 
             return $form;
         } catch (CrudException $e) {
@@ -181,15 +194,29 @@ class FormService
                 'slug' => function(string $value) {
                     return $this->slugService->generateSlug($value);
                 },
-                'fields' => function($value) {
-                    return is_array($value) ? $value : [];
+                'fields' => function($value) use ($form) {
+                    $fieldsArray = is_array($value) ? $value : [];
+                    $form->setFieldsJson($fieldsArray);
+                    return $fieldsArray;
                 },
-                'settings' => function($value) {
-                    return is_array($value) ? $value : [];
+                'settings' => function($value) use ($form) {
+                    $settingsArray = is_array($value) ? $value : [];
+                    $form->setSettingsJson($settingsArray);
+                    return $settingsArray;
                 },
             ];
 
             $this->crudManager->update($form, $data, $constraints, $transform);
+
+            if (isset($data['fields'])) {
+                $form->setFieldsJson(is_array($data['fields']) ? $data['fields'] : []);
+            }
+            if (isset($data['settings'])) {
+                $form->setSettingsJson(is_array($data['settings']) ? $data['settings'] : []);
+            }
+            $this->entityManager->flush();
+
+            
         } catch (CrudException $e) {
             throw new FormsException($e->getMessage());
         }

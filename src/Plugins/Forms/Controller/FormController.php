@@ -87,7 +87,7 @@ class FormController extends AbstractController
     }
 
     #[Route('/forms', name: 'forms_create#', methods: ['POST'])]
-    public function createForm(int $organization_id, Request $request): JsonResponse
+    public function createNewForm(int $organization_id, Request $request): JsonResponse
     {
         $user = $request->attributes->get('user');
         $data = $request->attributes->get('data');
