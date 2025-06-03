@@ -12,6 +12,9 @@ use App\Plugins\Events\Service\EventBookingService;
 use App\Plugins\Events\Service\ContactService;
 use App\Plugins\Events\Exception\EventsException;
 use App\Plugins\Organizations\Service\UserOrganizationService;
+use Doctrine\ORM\EntityManagerInterface;
+
+
 
 #[Route('/api/organizations/{organization_id}', requirements: ['organization_id' => '\d+'])]
 class EventBookingController extends AbstractController
@@ -21,19 +24,24 @@ class EventBookingController extends AbstractController
     private EventBookingService $bookingService;
     private ContactService $contactService;
     private UserOrganizationService $userOrganizationService;
+    private EntityManagerInterface $entityManager;
+    
+
 
     public function __construct(
         ResponseService $responseService,
         EventService $eventService,
         EventBookingService $bookingService,
         ContactService $contactService,
-        UserOrganizationService $userOrganizationService
+        UserOrganizationService $userOrganizationService,
+        EntityManagerInterface $entityManager 
     ) {
         $this->responseService = $responseService;
         $this->eventService = $eventService;
         $this->bookingService = $bookingService;
         $this->contactService = $contactService;
         $this->userOrganizationService = $userOrganizationService;
+        $this->entityManager = $entityManager;
     }
 
     #[Route('/events/{event_id}/bookings', name: 'event_bookings_get_many#', methods: ['GET'], requirements: ['event_id' => '\d+'])]
@@ -118,32 +126,39 @@ class EventBookingController extends AbstractController
         }
     }
 
-    #[Route('/events/{event_id}/bookings', name: 'event_bookings_create#', methods: ['POST'], requirements: ['event_id' => '\d+'])]
+    #[Route('/events/{event_id}/bookings', name: 'event_bookings_create', methods: ['POST'])]  
     public function createBooking(int $organization_id, int $event_id, Request $request): JsonResponse
     {
-        $user = $request->attributes->get('user');
-        $data = $request->attributes->get('data');
-
+        
+        $data = json_decode($request->getContent(), true);
+        
         try {
-            // Check if user has access to this organization
-            if (!$organization = $this->userOrganizationService->getOrganizationByUser($organization_id, $user)) {
+            
+            $event = $this->eventService->getOne($event_id);
+            if (!$event) {
+                return $this->responseService->json(false, 'Event was not found.');
+            }
+            $organization = $event->getOrganization();
+            
+            if (!$organization) {
                 return $this->responseService->json(false, 'Organization was not found.');
             }
             
-            // Get event by ID ensuring it belongs to the organization
-            if (!$event = $this->eventService->getEventByIdAndOrganization($event_id, $organization->entity)) {
+       
+            if (!$event = $this->eventService->getEventByIdAndOrganization($event_id, $organization)) {
                 return $this->responseService->json(false, 'Event was not found.');
             }
+   
+            if (isset($data['form_data']) && is_string($data['form_data'])) {
+                $data['form_data'] = json_decode($data['form_data'], true);
+            }
             
-            // Set event_id in data
             $data['event_id'] = $event->getId();
             
-            // Create booking
             $booking = $this->bookingService->create($data);
             
             $bookingData = $booking->toArray();
             
-            // Add guests
             $guests = $this->bookingService->getGuests($booking);
             $bookingData['guests'] = array_map(function($guest) {
                 return $guest->toArray();

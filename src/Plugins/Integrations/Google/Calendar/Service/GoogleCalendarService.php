@@ -7,6 +7,10 @@ use App\Plugins\Integrations\Common\Entity\IntegrationEntity;
 use App\Plugins\Integrations\Google\Calendar\Entity\GoogleCalendarEventEntity;
 use App\Plugins\Integrations\Common\Exception\IntegrationException;
 use App\Plugins\Account\Entity\UserEntity;
+use App\Plugins\Integrations\Common\Repository\IntegrationRepository;
+use App\Plugins\Account\Service\UserAvailabilityService;
+use App\Service\CrudManager;
+use Doctrine\ORM\EntityManagerInterface;
 use DateTime;
 use DateTimeInterface;
 
@@ -19,6 +23,15 @@ class GoogleCalendarService extends BaseCalendarIntegration
     private string $clientId = '263415563843-iisvu1oericu0v5mvc7bl2c1p3obq2mq.apps.googleusercontent.com';
     private string $clientSecret = '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';
     private string $redirectUri = 'https://app.skedi.com/oauth/google/callback';
+    
+    public function __construct(
+        EntityManagerInterface $entityManager,
+        IntegrationRepository $integrationRepository,
+        UserAvailabilityService $userAvailabilityService,
+        CrudManager $crudManager
+    ) {
+        parent::__construct($entityManager, $integrationRepository, $userAvailabilityService, $crudManager);
+    }
     
     /**
      * {@inheritdoc}
@@ -228,6 +241,7 @@ class GoogleCalendarService extends BaseCalendarIntegration
                             
                             $savedEvent = $this->saveEvent($integration, $user, $event, $calendarId, $calendarName);
                             if ($savedEvent) {
+                                $this->entityManager->flush();
                                 $savedEvents[] = $savedEvent;
                                 $calendarEventIds[] = $event->getId();
                             }
@@ -436,12 +450,14 @@ class GoogleCalendarService extends BaseCalendarIntegration
                 $isAllDay = true;
                 $startTime = new DateTime($start->date, new \DateTimeZone('UTC'));
                 $endTime = new DateTime($end->date, new \DateTimeZone('UTC'));
-            } else {
+            } elseif ($start->dateTime) {
                 $timezone = $start->timeZone ?: 'UTC';
                 $startTime = new DateTime($start->dateTime, new \DateTimeZone($timezone));
                 $endTime = new DateTime($end->dateTime, new \DateTimeZone($timezone));
                 $startTime->setTimezone(new \DateTimeZone('UTC'));
                 $endTime->setTimezone(new \DateTimeZone('UTC'));
+            } else {
+                return null; // No valid time
             }
             
             if ($existingEvent) {
@@ -497,6 +513,7 @@ class GoogleCalendarService extends BaseCalendarIntegration
                 return $newEvent;
             }
         } catch (\Exception $e) {
+            error_log('Error saving event: ' . $e->getMessage());
             return null;
         }
     }
@@ -570,37 +587,86 @@ class GoogleCalendarService extends BaseCalendarIntegration
      */
     private function setConferenceData(\Google\Service\Calendar\Event $event, array $conferenceData): void
     {
-        if (isset($conferenceData['type']) && $conferenceData['type'] === 'hangoutsMeet') {
-            if (isset($conferenceData['link'])) {
-                // Use existing link
-                $conference = new \Google\Service\Calendar\ConferenceData();
-                
-                $entryPoint = new \Google\Service\Calendar\EntryPoint();
-                $entryPoint->setEntryPointType('video');
-                $entryPoint->setUri($conferenceData['link']);
-                $entryPoint->setLabel('Google Meet');
-                
-                $conference->setEntryPoints([$entryPoint]);
-                
-                $conferenceSolution = new \Google\Service\Calendar\ConferenceSolution();
-                $solutionKey = new \Google\Service\Calendar\ConferenceSolutionKey();
-                $solutionKey->setType('hangoutsMeet');
-                $conferenceSolution->setKey($solutionKey);
-                $conference->setConferenceSolution($conferenceSolution);
-                
-                $event->setConferenceData($conference);
-            } else {
-                // Create new
-                $conference = new \Google\Service\Calendar\ConferenceData();
-                $createRequest = new \Google\Service\Calendar\CreateConferenceRequest();
-                $createRequest->setRequestId('meet_' . uniqid());
-                $createRequest->setConferenceSolutionKey(
-                    new \Google\Service\Calendar\ConferenceSolutionKey(['type' => 'hangoutsMeet'])
-                );
-                
-                $conference->setCreateRequest($createRequest);
-                $event->setConferenceData($conference);
+        if (isset($conferenceData['type'])) {
+            if ($conferenceData['type'] === 'existingMeet' && isset($conferenceData['meetId'])) {
+                // Link to existing Meet
+                try {
+                    // First, we need to get the existing event to copy its conference data
+                    $service = new GoogleCalendar($this->getGoogleClient());
+                    $existingEvent = $service->events->get('primary', $conferenceData['meetId']);
+                    
+                    if ($existingEvent && $existingEvent->getConferenceData()) {
+                        // Copy the conference data from the existing event
+                        $event->setConferenceData($existingEvent->getConferenceData());
+                    }
+                } catch (\Exception $e) {
+                    // If we can't get the existing event, create a new Meet link
+                    $this->createNewMeetConference($event);
+                }
+            } else if ($conferenceData['type'] === 'hangoutsMeet') {
+                if (isset($conferenceData['link'])) {
+                    // Use existing link - but this usually doesn't work with Google API
+                    // Google prefers to create its own links
+                    $this->createNewMeetConference($event);
+                } else {
+                    // Create new Meet conference
+                    $this->createNewMeetConference($event);
+                }
             }
+        }
+    }
+
+    private function createNewMeetConference(\Google\Service\Calendar\Event $event): void
+    {
+        $conference = new \Google\Service\Calendar\ConferenceData();
+        $createRequest = new \Google\Service\Calendar\CreateConferenceRequest();
+        $createRequest->setRequestId('meet_' . uniqid());
+        $createRequest->setConferenceSolutionKey(
+            new \Google\Service\Calendar\ConferenceSolutionKey(['type' => 'hangoutsMeet'])
+        );
+        
+        $conference->setCreateRequest($createRequest);
+        $event->setConferenceData($conference);
+    }
+
+
+
+
+    public function testSaveEvent(IntegrationEntity $integration): array
+    {
+        try {
+            // Create a test event
+            $testEvent = new GoogleCalendarEventEntity();
+            $testEvent->setUser($integration->getUser());
+            $testEvent->setIntegration($integration);
+            $testEvent->setGoogleEventId('test_' . uniqid());
+            $testEvent->setCalendarId('primary');
+            $testEvent->setCalendarName('Test Calendar');
+            $testEvent->setTitle('Test Event from API');
+            $testEvent->setDescription('This is a test event');
+            $testEvent->setStartTime(new DateTime('+1 day'));
+            $testEvent->setEndTime(new DateTime('+1 day 1 hour'));
+            $testEvent->setIsAllDay(false);
+            $testEvent->setStatus('confirmed');
+            $testEvent->setSyncedAt(new DateTime());
+            
+            $this->entityManager->persist($testEvent);
+            $this->entityManager->flush();
+            
+            // Try to retrieve it
+            $saved = $this->entityManager->getRepository(GoogleCalendarEventEntity::class)->find($testEvent->getId());
+            
+            return [
+                'save_success' => true,
+                'event_id' => $testEvent->getId(),
+                'retrieved' => $saved ? true : false
+            ];
+        } catch (\Exception $e) {
+            return [
+                'save_success' => false,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ];
         }
     }
 }

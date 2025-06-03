@@ -13,7 +13,7 @@ use App\Plugins\Events\Entity\EventGuestEntity;
 use App\Plugins\Events\Entity\ContactEntity;
 use App\Plugins\Events\Exception\EventsException;
 use App\Plugins\Integrations\Google\Calendar\Service\GoogleCalendarService;
-use App\Plugins\Integrations\Microsoft\Outlook\Service\OutlookCalendarService;
+//use App\Plugins\Integrations\Microsoft\Outlook\Service\OutlookCalendarService;
 use App\Plugins\Integrations\Google\Meet\Service\GoogleMeetService;
 
 use DateTime;
@@ -25,7 +25,7 @@ class EventBookingService
     private ContactService $contactService;
     private EventScheduleService $scheduleService;
     private GoogleCalendarService $googleCalendarService;
-    private OutlookCalendarService $outlookCalendarService;
+    //private OutlookCalendarService $outlookCalendarService;
     private GoogleMeetService $googleMeetService;
 
     public function __construct(
@@ -33,7 +33,7 @@ class EventBookingService
         EntityManagerInterface $entityManager,
         ContactService $contactService,
         EventScheduleService $scheduleService,
-        OutlookCalendarService $outlookCalendarService,
+        //OutlookCalendarService $outlookCalendarService,
         GoogleCalendarService $googleCalendarService,
         GoogleMeetService $googleMeetService
     ) {
@@ -42,7 +42,7 @@ class EventBookingService
         $this->contactService = $contactService;
         $this->scheduleService = $scheduleService;
         $this->googleCalendarService = $googleCalendarService;
-        $this->outlookCalendarService = $outlookCalendarService;
+        //$this->outlookCalendarService = $outlookCalendarService;
         $this->googleMeetService = $googleMeetService;
     }
 
@@ -77,6 +77,7 @@ class EventBookingService
             if (!$event) {
                 throw new EventsException('Event not found');
             }
+
             
             // Validate time slot
             if (empty($data['start_time']) || empty($data['end_time'])) {
@@ -156,13 +157,20 @@ class EventBookingService
             
             // Create availability records for event hosts
             $this->scheduleService->handleBookingCreated($booking);
+            
 
             $meetingInfo = $this->generateMeetingLink($booking, $data);
-        
-            // Store meeting info in form_data if created
+
+
             if ($meetingInfo) {
                 $formData = $booking->getFormDataAsArray() ?: [];
                 $formData['online_meeting'] = $meetingInfo;
+                
+                // Add a flag to track which user created the calendar event
+                if (isset($meetingInfo['calendar_creator_user_id'])) {
+                    $formData['calendar_creator_user_id'] = $meetingInfo['calendar_creator_user_id'];
+                }
+                
                 $booking->setFormDataFromArray($formData);
                 
                 $this->entityManager->persist($booking);
@@ -558,7 +566,6 @@ class EventBookingService
             'providers' => [],
             'debug_info' => [
                 'google' => [],
-                'outlook' => [],
                 'general' => []
             ]
         ];
@@ -569,15 +576,14 @@ class EventBookingService
             
             // Extract meeting info from form data if it exists
             $formData = $booking->getFormDataAsArray() ?: [];
+            $calendarCreatorUserId = $formData['calendar_creator_user_id'] ?? null;
             $meetingInfo = $formData['online_meeting'] ?? null;
             $meetLink = null;
-            
-            // Debug the form data to see what's available
-            error_log("Booking form data: " . json_encode($formData));
+            $meetId = null;
             
             if ($meetingInfo && isset($meetingInfo['provider']) && $meetingInfo['provider'] === 'google_meet') {
                 $meetLink = $meetingInfo['link'] ?? null;
-                error_log("Found Google Meet link in booking: " . $meetLink);
+                $meetId = $meetingInfo['id'] ?? null;
             }
             
             // Format description with booking details
@@ -613,8 +619,6 @@ class EventBookingService
                 $criteria
             );
             
-            $results['debug_info']['general']['assignee_count'] = count($assignees);
-            
             // Prepare attendees from booking guests
             $attendees = [];
             $guests = $this->crudManager->findMany(
@@ -631,17 +635,20 @@ class EventBookingService
                     'name' => $guest->getName()
                 ];
             }
+
+     
             
-            $results['debug_info']['general']['attendee_count'] = count($attendees);
-            $results['debug_info']['general']['booking_id'] = $booking->getId();
-            $results['debug_info']['general']['booking_start'] = $booking->getStartTime()->format('Y-m-d H:i:s');
-            $results['debug_info']['general']['booking_end'] = $booking->getEndTime()->format('Y-m-d H:i:s');
-            $results['debug_info']['general']['has_meet_link'] = $meetLink !== null;
+
             
             // Process each assignee
             foreach ($assignees as $assignee) {
                 $user = $assignee->getUser();
-                $results['debug_info']['general']['processing_user_id'] = $user->getId();
+
+                // SKIP if this user already created a calendar event with Meet
+                if ($calendarCreatorUserId && $user->getId() == $calendarCreatorUserId) {
+                    $results['skipped']++;
+                    continue;
+                }
                 
                 // Get active Google Calendar integrations for this user
                 $googleIntegrations = $this->crudManager->findMany(
@@ -656,13 +663,8 @@ class EventBookingService
                     ]
                 );
                 
-                $results['debug_info']['google']['integration_count'] = count($googleIntegrations);
-                
                 if (!empty($googleIntegrations)) {
                     $integration = $googleIntegrations[0];
-                    $results['debug_info']['google']['integration_id'] = $integration->getId();
-                    $results['debug_info']['google']['token_expiry'] = $integration->getTokenExpires() ? 
-                        $integration->getTokenExpires()->format('Y-m-d H:i:s') : 'null';
                     
                     try {
                         // Create options for Google Calendar event
@@ -672,13 +674,22 @@ class EventBookingService
                             'source_id' => 'booking_' . $booking->getId()
                         ];
                         
-                        // Include existing Meet link if available
-                        if ($meetLink && strpos($meetLink, 'meet.google.com') !== false) {
-                            error_log("Adding Meet link to calendar options: " . $meetLink);
-                            $options['conference_data'] = [
-                                'type' => 'hangoutsMeet',
-                                'link' => $meetLink
-                            ];
+                        // IMPORTANT: Check if we have a Meet link from the same Google account
+                        if ($meetLink && $meetId) {
+                            // Check if this Meet link was created by the same user
+                            $meetEvent = $this->entityManager->getRepository('App\Plugins\Integrations\Google\Meet\Entity\GoogleMeetEventEntity')
+                                ->findOneBy(['meetId' => $meetId]);
+                            
+                            if ($meetEvent && $meetEvent->getUser()->getId() === $user->getId()) {
+                                // This user created the Meet link, so we should attach it to their calendar event
+                                $options['conference_data'] = [
+                                    'type' => 'existingMeet',
+                                    'meetId' => $meetId
+                                ];
+                            } else {
+                                // Different user, just include the link in description
+                                // (Google won't let us attach another user's Meet link)
+                            }
                         }
                         
                         // Create the event in Google Calendar
@@ -690,121 +701,21 @@ class EventBookingService
                             $options
                         );
                         
-                        $results['debug_info']['google']['event_created'] = true;
-                        $results['debug_info']['google']['event_id'] = $createdEvent['google_event_id'] ?? 'unknown';
-                        $results['debug_info']['google']['meet_link'] = $createdEvent['meet_link'] ?? 'none';
-                        $results['debug_info']['google']['conference_method'] = $createdEvent['conference_method_used'] ?? 'unknown';
-                        
-                        // Track results
-                        if (!isset($results['providers']['google_calendar'])) {
-                            $results['providers']['google_calendar'] = [
-                                'success' => 0,
-                                'failure' => 0
-                            ];
-                        }
-                        
                         $results['providers']['google_calendar']['success']++;
                         $results['success']++;
                     } catch (\Exception $e) {
-                        $results['debug_info']['google']['error'] = $e->getMessage();
-                        $results['debug_info']['google']['error_trace'] = $e->getTraceAsString();
-                        
-                        if (!isset($results['providers']['google_calendar'])) {
-                            $results['providers']['google_calendar'] = [
-                                'success' => 0,
-                                'failure' => 0
-                            ];
-                        }
-                        
                         $results['providers']['google_calendar']['failure']++;
                         $results['failure']++;
                     }
-                }
-                
-                // Get active Outlook Calendar integrations for this user
-                $outlookIntegrations = $this->crudManager->findMany(
-                    'App\Plugins\Integrations\Common\Entity\IntegrationEntity',
-                    [],
-                    1,
-                    10,
-                    [
-                        'user' => $user,
-                        'provider' => 'outlook_calendar',
-                        'status' => 'active'
-                    ]
-                );
-                
-                $results['debug_info']['outlook']['integration_count'] = count($outlookIntegrations);
-                
-                if (!empty($outlookIntegrations)) {
-                    $integration = $outlookIntegrations[0];
-                    $results['debug_info']['outlook']['integration_id'] = $integration->getId();
-                    $results['debug_info']['outlook']['token_expiry'] = $integration->getTokenExpires() ? 
-                        $integration->getTokenExpires()->format('Y-m-d H:i:s') : 'null';
-                    $results['debug_info']['outlook']['access_token_length'] = $integration->getAccessToken() ? 
-                        strlen($integration->getAccessToken()) : 0;
-                    $results['debug_info']['outlook']['has_refresh_token'] = !empty($integration->getRefreshToken());
-                    $results['debug_info']['outlook']['scopes'] = $integration->getScopes();
-                    
-                    try {
-                        // Create the event in Outlook Calendar
-                        // Add online meeting link to description only for Outlook since we can't
-                        // directly set a Google Meet link in Outlook events
-                        $outlookOptions = [
-                            'description' => $description,
-                            'attendees' => $attendees,
-                            'source_id' => 'booking_' . $booking->getId()
-                        ];
-                        
-                        $createdEvent = $this->outlookCalendarService->createCalendarEvent(
-                            $integration,
-                            $title,
-                            $booking->getStartTime(),
-                            $booking->getEndTime(),
-                            $outlookOptions
-                        );
-                        
-                        $results['debug_info']['outlook']['event_created'] = true;
-                        $results['debug_info']['outlook']['event_id'] = $createdEvent['outlook_event_id'] ?? 'unknown';
-                        
-                        if (!isset($results['providers']['outlook_calendar'])) {
-                            $results['providers']['outlook_calendar'] = [
-                                'success' => 0,
-                                'failure' => 0
-                            ];
-                        }
-                        
-                        $results['providers']['outlook_calendar']['success']++;
-                        $results['success']++;
-                    } catch (\Exception $e) {
-                        $results['debug_info']['outlook']['error'] = $e->getMessage();
-                        $results['debug_info']['outlook']['error_trace'] = $e->getTraceAsString();
-                        
-                        if (!isset($results['providers']['outlook_calendar'])) {
-                            $results['providers']['outlook_calendar'] = [
-                                'success' => 0,
-                                'failure' => 0
-                            ];
-                        }
-                        
-                        $results['providers']['outlook_calendar']['failure']++;
-                        $results['failure']++;
-                    }
-                }
-                
-                // If no active calendars, count as skipped
-                if (empty($googleIntegrations) && empty($outlookIntegrations)) {
-                    $results['skipped']++;
                 }
             }
             
             return $results;
         } catch (\Exception $e) {
-            $results['debug_info']['general']['unhandled_error'] = $e->getMessage();
-            $results['debug_info']['general']['error_trace'] = $e->getTraceAsString();
             return $results;
         }
     }
+
     
     private function generateMeetingLink(EventBookingEntity $booking, array $data): ?array
     {
@@ -812,37 +723,45 @@ class EventBookingService
             $event = $booking->getEvent();
             $location = $event->getLocation();
             
-            // Return early if no location or not an online meeting type
-            if (!is_array($location) || !isset($location['type'])) {
+            // Return early if no location
+            if (!is_array($location) || empty($location)) {
                 return null;
             }
             
+     
+            $locationConfig = null;
+            if (isset($location['type'])) {
+                // Direct object: {"type": "google_meet", "integration_id": 26}
+                $locationConfig = $location;
+            } elseif (isset($location[0]) && isset($location[0]['type'])) {
+                // Array of objects: [{"type": "google_meet", "integration_id": 26}]
+                $locationConfig = $location[0];
+            } else {
+                return null;
+            }
+
+ 
             // Meeting info to return
             $meetingInfo = null;
             
             // Handle different meeting types
-            switch ($location['type']) {
+            switch ($locationConfig['type']) {
                 case 'google_meet':
-                    $meetingInfo = $this->generateGoogleMeetLink($booking, $location, $data);
+                    $meetingInfo = $this->generateGoogleMeetLink($booking, $locationConfig, $data);
                     break;
                     
                 case 'zoom':
                     // Future implementation
-                    // $meetingInfo = $this->generateZoomLink($booking, $location, $data);
                     break;
                     
                 case 'teams':
                     // Future implementation
-                    // $meetingInfo = $this->generateTeamsLink($booking, $location, $data);
                     break;
-                    
-                // Add more cases as needed
             }
             
             return $meetingInfo;
         } catch (\Exception $e) {
-            // Log the error but don't throw to avoid breaking the booking process
-            error_log('Failed to generate meeting link: ' . $e->getMessage());
+            // Return null on any error
             return null;
         }
     }
@@ -851,22 +770,38 @@ class EventBookingService
     private function generateGoogleMeetLink(EventBookingEntity $booking, array $location, array $data): ?array
     {
         try {
-            // Get integration_id from location if provided, otherwise try to find integration
+            // Get integration_id from location if provided
             $integrationId = $location['integration_id'] ?? null;
             $integration = null;
             
             if ($integrationId) {
-                // Get specific integration by ID
+                // Try to find the specified integration
                 $integration = $this->entityManager->getRepository('App\Plugins\Integrations\Common\Entity\IntegrationEntity')
                     ->find($integrationId);
-            } else {
-                // Try to get event creator's integration
-                $creator = $booking->getEvent()->getCreatedBy();
-                $integration = $this->googleMeetService->getUserIntegration($creator);
+                
+                // Verify it's a Google Meet or Google Calendar integration
+                if ($integration && !in_array($integration->getProvider(), ['google_meet', 'google_calendar'])) {
+                    $integration = null;
+                }
             }
             
             if (!$integration) {
-                error_log('No Google Meet integration found for booking ID ' . $booking->getId());
+                // Try to get event creator's Google Meet integration
+                $creator = $booking->getEvent()->getCreatedBy();
+                $integration = $this->googleMeetService->getUserIntegration($creator);
+                
+                // If no Google Meet integration, try Google Calendar
+                if (!$integration) {
+                    $integration = $this->entityManager->getRepository('App\Plugins\Integrations\Common\Entity\IntegrationEntity')
+                        ->findOneBy([
+                            'user' => $creator,
+                            'provider' => 'google_calendar',
+                            'status' => 'active'
+                        ]);
+                }
+            }
+            
+            if (!$integration) {
                 return null;
             }
             
@@ -879,7 +814,7 @@ class EventBookingService
             if (!empty($data['form_data']) && is_array($data['form_data'])) {
                 $description .= "\n\nParticipant information:";
                 foreach ($data['form_data'] as $key => $value) {
-                    if (is_scalar($value)) {
+                    if (is_scalar($value) && !in_array($key, ['online_meeting', 'booking_timezone'])) {
                         $description .= "\n" . ucfirst(str_replace('_', ' ', $key)) . ": " . $value;
                     }
                 }
@@ -898,7 +833,7 @@ class EventBookingService
                 }
             }
             
-            // Generate Google Meet link
+            // Create Google Meet link only (no calendar event)
             $meetEvent = $this->googleMeetService->createMeetLink(
                 $integration,
                 $title,
@@ -919,10 +854,11 @@ class EventBookingService
                 'provider' => 'google_meet',
                 'link' => $meetEvent->getMeetLink(),
                 'id' => $meetEvent->getMeetId(),
-                'created_at' => $meetEvent->getCreated()->format('Y-m-d H:i:s')
+                'created_at' => $meetEvent->getCreated()->format('Y-m-d H:i:s'),
+                'calendar_creator_user_id' => $integration->getUser()->getId() // ADD THIS
             ];
         } catch (\Exception $e) {
-            error_log('Failed to create Google Meet link: ' . $e->getMessage());
+            // Silently fail - don't break the booking process
             return null;
         }
     }

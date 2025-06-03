@@ -4,6 +4,8 @@ namespace App\Plugins\Integrations\Google\Calendar\Entity;
 
 use Doctrine\ORM\Mapping as ORM;
 use App\Plugins\Account\Entity\UserEntity;
+use App\Plugins\Integrations\Common\Entity\IntegrationEntity;
+
 use DateTime;
 use DateTimeInterface;
 

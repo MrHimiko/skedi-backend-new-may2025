@@ -67,7 +67,21 @@ doctrine:
                 type: attribute
                 dir: '%kernel.project_dir%/src/Plugins/Integrations/Common/Entity'
                 prefix: 'App\Plugins\Integrations\Common\Entity'
-                alias: Events
+                alias: Integrations
+
+            GoogleIntegrations:
+                is_bundle: false
+                type: attribute
+                dir: '%kernel.project_dir%/src/Plugins/Integrations/Google'
+                prefix: 'App\Plugins\Integrations\Google'
+                alias: GoogleIntegrations
+
+            MicrosoftIntegrations:
+                is_bundle: false
+                type: attribute
+                dir: '%kernel.project_dir%/src/Plugins/Integrations/Microsoft'
+                prefix: 'App\Plugins\Integrations\Microsoft'
+                alias: MicrosoftIntegrations
 
 
             # Account:

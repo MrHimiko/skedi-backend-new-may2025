@@ -193,4 +193,7 @@ class GoogleCalendarController extends AbstractController
             return $this->responseService->json(false, 'An error occurred: ' . $e->getMessage(), null, 500);
         }
     }
+
+
+    
 }

@@ -36,8 +36,7 @@ services:
             - { name: kernel.event_listener, event: kernel.exception }
 
 
-
-     # Integration Services
+    # Integration Services
     app.integration.google_calendar:
         class: App\Plugins\Integrations\Google\Calendar\Service\GoogleCalendarService
         arguments:
@@ -45,14 +44,16 @@ services:
             - '@App\Plugins\Integrations\Common\Repository\IntegrationRepository'
             - '@App\Plugins\Account\Service\UserAvailabilityService'
             - '@App\Service\CrudManager'
-    
+
     app.integration.google_meet:
         class: App\Plugins\Integrations\Google\Meet\Service\GoogleMeetService
         arguments:
             - '@doctrine.orm.entity_manager'
             - '@App\Plugins\Integrations\Common\Repository\IntegrationRepository'
+            - '@App\Plugins\Integrations\Google\Meet\Repository\GoogleMeetEventRepository' 
             - '@App\Service\CrudManager'
-    
+            - '@parameter_bag'  
+
     # Make services available for dependency injection
     App\Plugins\Integrations\Google\Calendar\Service\GoogleCalendarService: '@app.integration.google_calendar'
     App\Plugins\Integrations\Google\Meet\Service\GoogleMeetService: '@app.integration.google_meet'

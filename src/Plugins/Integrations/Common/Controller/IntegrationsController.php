@@ -512,6 +512,39 @@ class IntegrationsController extends AbstractController
         return $standardizedEvents;
     }
 
-    
+
+
+    #[Route('/user/integrations/test-save', name: 'integration_test_save#', methods: ['GET'])]
+    public function testSave(Request $request): JsonResponse
+    {
+        $user = $request->attributes->get('user');
+        
+        try {
+            // Get Google Calendar integration
+            $integrations = $this->IntegrationRepository->findBy([
+                'user' => $user,
+                'provider' => 'google_calendar',
+                'status' => 'active'
+            ]);
+            
+            if (empty($integrations)) {
+                return $this->responseService->json(false, 'No Google Calendar integration found');
+            }
+            
+            $integration = $integrations[0];
+            
+            // Test saving an event
+            $result = $this->googleCalendarService->testSaveEvent($integration);
+            
+            return $this->responseService->json($result['save_success'], 'Test save result', $result);
+        } catch (\Exception $e) {
+            return $this->responseService->json(false, $e->getMessage(), [
+                'error' => $e->getMessage(),
+                'trace' => explode("\n", $e->getTraceAsString())
+            ], 500);
+        }
+        }
+
+        
 
 }

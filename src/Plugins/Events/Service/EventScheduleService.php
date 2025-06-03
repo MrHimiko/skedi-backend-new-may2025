@@ -570,11 +570,15 @@ class EventScheduleService
      */
     public function handleBookingCreated(EventBookingEntity $booking): void
     {
+
+
         try {
             $event = $booking->getEvent();
             $hosts = $this->getEventHosts($event);
-            
+
+
             foreach ($hosts as $host) {
+
                 $this->userAvailabilityService->createInternalAvailability(
                     $host,
                     $event->getName() . ' - Booking',
