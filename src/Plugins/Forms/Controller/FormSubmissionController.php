@@ -12,6 +12,8 @@ use App\Plugins\Forms\Service\FormSubmissionService;
 use App\Plugins\Forms\Exception\FormsException;
 use App\Plugins\Organizations\Service\UserOrganizationService;
 use App\Plugins\Organizations\Service\OrganizationService;
+use App\Plugins\Events\Service\EventService;
+
 
 #[Route('/api')]
 class FormSubmissionController extends AbstractController
@@ -21,19 +23,23 @@ class FormSubmissionController extends AbstractController
     private FormSubmissionService $submissionService;
     private UserOrganizationService $userOrganizationService;
     private OrganizationService $organizationService;
+    private EventService $eventService;
+
 
     public function __construct(
         ResponseService $responseService,
         FormService $formService,
         FormSubmissionService $submissionService,
         UserOrganizationService $userOrganizationService,
-        OrganizationService $organizationService
+        OrganizationService $organizationService,
+        EventService $eventService
     ) {
         $this->responseService = $responseService;
         $this->formService = $formService;
         $this->submissionService = $submissionService;
         $this->userOrganizationService = $userOrganizationService;
         $this->organizationService = $organizationService;
+        $this->eventService = $eventService;
     }
 
     #[Route('/organizations/{organization_id}/forms/{form_id}/submissions', name: 'form_submissions_get#', methods: ['GET'], requirements: ['organization_id' => '\d+', 'form_id' => '\d+'])]

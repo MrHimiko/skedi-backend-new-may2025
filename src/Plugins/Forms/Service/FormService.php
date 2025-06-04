@@ -234,15 +234,22 @@ class FormService
     public function attachToEvent(FormEntity $form, EventEntity $event): EventFormEntity
     {
         try {
-            // Check if already attached
-            $existing = $this->crudManager->findOne(EventFormEntity::class, null, [
+            // Check if already attached using repository
+            $eventFormRepository = $this->entityManager->getRepository(EventFormEntity::class);
+            
+            $existing = $eventFormRepository->findOneBy([
                 'event' => $event
             ]);
 
             if ($existing) {
-                throw new FormsException('Event already has a form attached.');
+                // Update existing attachment to use the new form
+                $existing->setForm($form);
+                $existing->setIsActive(true);
+                $this->entityManager->flush();
+                return $existing;
             }
 
+            // Create new attachment
             $eventForm = new EventFormEntity();
             $eventForm->setForm($form);
             $eventForm->setEvent($event);
@@ -253,6 +260,23 @@ class FormService
             return $eventForm;
         } catch (\Exception $e) {
             throw new FormsException($e->getMessage());
+        }
+    }
+
+    // Also fix the getFormForEvent method while we're at it:
+    public function getFormForEvent(EventEntity $event): ?FormEntity
+    {
+        try {
+            $eventFormRepository = $this->entityManager->getRepository(EventFormEntity::class);
+            
+            $eventForm = $eventFormRepository->findOneBy([
+                'event' => $event,
+                'isActive' => true
+            ]);
+            
+            return $eventForm ? $eventForm->getForm() : null;
+        } catch (\Exception $e) {
+            return null;
         }
     }
 
@@ -272,13 +296,5 @@ class FormService
         }
     }
 
-    public function getFormForEvent(EventEntity $event): ?FormEntity
-    {
-        $eventForm = $this->crudManager->findOne(EventFormEntity::class, null, [
-            'event' => $event,
-            'isActive' => true
-        ]);
 
-        return $eventForm ? $eventForm->getForm() : null;
-    }
 }

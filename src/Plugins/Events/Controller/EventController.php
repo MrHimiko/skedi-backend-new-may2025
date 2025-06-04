@@ -12,6 +12,7 @@ use App\Plugins\Events\Exception\EventsException;
 use App\Plugins\Organizations\Service\UserOrganizationService;
 use App\Plugins\Organizations\Service\OrganizationService;
 use App\Plugins\Teams\Service\TeamService;
+use App\Plugins\Events\Entity\EventEntity;
 
 
 
@@ -453,7 +454,6 @@ class EventController extends AbstractController
                 'requires_form' => !empty($formFields),
                 'has_multiple_locations' => count($eventData['available_locations']) > 1,
                 'has_multiple_durations' => count($eventData['duration_options']) > 1,
-                'timezone' => $organization->getTimezone() ?? 'UTC'
             ];
             
             return $this->responseService->json(true, 'retrieve', $eventData);
