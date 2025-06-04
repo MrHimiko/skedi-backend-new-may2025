@@ -429,15 +429,32 @@ class EventController extends AbstractController
             // Add schedule to response
             $eventData['schedule'] = $event->getSchedule();
             
+            // Add location information with enhanced structure
+            $eventData['location'] = $this->formatLocationForPublicApi($event->getLocation());
+            
+            // Add available location options if multiple locations are configured
+            $eventData['available_locations'] = $this->getAvailableLocations($event);
+            
             // Add form fields
             $formFields = $this->eventService->getFormFields($event);
             $eventData['form_fields'] = array_map(function($field) {
                 return $field->toArray();
             }, $formFields);
-
+            
+            // Add duration options with proper formatting
+            $eventData['duration_options'] = $this->formatDurationOptions($event->getDuration());
             
             // Remove sensitive data
             unset($eventData['created_by']);
+            unset($eventData['organization_id']);
+            
+            // Add metadata for frontend
+            $eventData['metadata'] = [
+                'requires_form' => !empty($formFields),
+                'has_multiple_locations' => count($eventData['available_locations']) > 1,
+                'has_multiple_durations' => count($eventData['duration_options']) > 1,
+                'timezone' => $organization->getTimezone() ?? 'UTC'
+            ];
             
             return $this->responseService->json(true, 'retrieve', $eventData);
         } catch (EventsException $e) {
@@ -448,6 +465,7 @@ class EventController extends AbstractController
     }
 
 
+    
 
     
 
@@ -533,6 +551,174 @@ class EventController extends AbstractController
             return $this->responseService->json(false, $e, null, 500);
         }
     }
+
+
+
+
+    /**
+     * Format location data for public API consumption
+     */
+    private function formatLocationForPublicApi($location): ?array
+    {
+        if (!$location) {
+            return null;
+        }
+        
+        // Handle single location object
+        if (isset($location['type'])) {
+            return $this->formatSingleLocation($location);
+        }
+        
+        // Handle array of locations
+        if (is_array($location) && isset($location[0])) {
+            return array_map([$this, 'formatSingleLocation'], $location);
+        }
+        
+        return null;
+    }
+
+    /**
+     * Format a single location entry
+     */
+    private function formatSingleLocation(array $location): array
+    {
+        $formatted = [
+            'type' => $location['type'] ?? 'unknown',
+            'display_name' => $this->getLocationDisplayName($location),
+            'requires_input' => false,
+            'input_label' => null,
+            'icon' => $this->getLocationIcon($location['type'] ?? 'unknown')
+        ];
+        
+        // Add type-specific fields
+        switch ($location['type']) {
+            case 'phone':
+                $formatted['requires_input'] = true;
+                $formatted['input_label'] = 'Phone Number';
+                $formatted['input_type'] = 'tel';
+                break;
+                
+            case 'custom':
+                $formatted['requires_input'] = true;
+                $formatted['input_label'] = $location['label'] ?? 'Location Details';
+                $formatted['input_type'] = 'text';
+                break;
+                
+            case 'google_meet':
+            case 'zoom':
+            case 'teams':
+                $formatted['auto_generated'] = true;
+                $formatted['provider'] = $location['type'];
+                break;
+                
+            case 'in_person':
+                $formatted['address'] = $location['address'] ?? null;
+                $formatted['instructions'] = $location['instructions'] ?? null;
+                break;
+        }
+        
+        return $formatted;
+    }
+
+
+    /**
+     * Get available locations for an event
+     */
+    private function getAvailableLocations(EventEntity $event): array
+    {
+        $locations = $event->getLocation();
+        
+        if (!$locations) {
+            return [];
+        }
+        
+        // If it's a single location, wrap it in an array
+        if (isset($locations['type'])) {
+            return [$this->formatSingleLocation($locations)];
+        }
+        
+        // If it's already an array of locations
+        if (is_array($locations)) {
+            $formatted = [];
+            foreach ($locations as $location) {
+                if (is_array($location) && isset($location['type'])) {
+                    $formatted[] = $this->formatSingleLocation($location);
+                }
+            }
+            return $formatted;
+        }
+        
+        return [];
+    }
+
+    /**
+     * Get display name for location type
+     */
+    private function getLocationDisplayName(array $location): string
+    {
+        $type = $location['type'] ?? 'unknown';
+        
+        $displayNames = [
+            'google_meet' => 'Google Meet',
+            'zoom' => 'Zoom Meeting',
+            'teams' => 'Microsoft Teams',
+            'phone' => 'Phone Call',
+            'in_person' => 'In-Person Meeting',
+            'custom' => $location['label'] ?? 'Custom Location'
+        ];
+        
+        return $displayNames[$type] ?? ucfirst(str_replace('_', ' ', $type));
+    }
+
+    /**
+     * Get icon for location type
+     */
+    private function getLocationIcon(string $type): string
+    {
+        $icons = [
+            'google_meet' => 'video',
+            'zoom' => 'video',
+            'teams' => 'video',
+            'phone' => 'phone',
+            'in_person' => 'map-pin',
+            'custom' => 'location'
+        ];
+        
+        return $icons[$type] ?? 'location';
+    }
+
+    /**
+     * Format duration options for better frontend consumption
+     */
+    private function formatDurationOptions(?array $durations): array
+    {
+        if (!$durations || !is_array($durations)) {
+            return [[
+                'duration' => 30,
+                'title' => '30 minutes',
+                'description' => '',
+                'is_default' => true
+            ]];
+        }
+        
+        $formatted = [];
+        foreach ($durations as $index => $duration) {
+            $formatted[] = [
+                'duration' => (int)($duration['duration'] ?? 30),
+                'title' => $duration['title'] ?? ($duration['duration'] . ' minutes'),
+                'description' => $duration['description'] ?? '',
+                'is_default' => $index === 0
+            ];
+        }
+        
+        return $formatted;
+    }
+
+
+
+
+
+
 
 
 

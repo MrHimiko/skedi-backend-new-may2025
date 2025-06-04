@@ -189,4 +189,44 @@ class FormSubmissionController extends AbstractController
             return $this->responseService->json(false, $e, null, 500);
         }
     }
+
+
+
+    #[Route('/api/public/events/{event_id}/form', name: 'public_event_form_by_id', methods: ['GET'], requirements: ['event_id' => '\d+'])]
+    public function getPublicEventFormById(int $event_id, Request $request): JsonResponse
+    {
+        try {
+            // Get event by ID
+            $event = $this->eventService->getOne($event_id);
+            
+            if (!$event || $event->isDeleted()) {
+                return $this->responseService->json(false, 'Event not found', null, 404);
+            }
+            
+            // Get form attached to this event
+            $form = $this->formService->getFormForEvent($event);
+            
+            if (!$form) {
+                return $this->responseService->json(false, 'No form attached to this event', null, 404);
+            }
+            
+            // Return form data
+            $formData = [
+                'id' => $form->getId(),
+                'name' => $form->getName(),
+                'description' => $form->getDescription(),
+                'fields' => $form->getFieldsJson(),
+                'settings' => $form->getSettingsJson(),
+                'allow_multiple_submissions' => $form->isAllowMultipleSubmissions(),
+                'requires_authentication' => $form->isRequiresAuthentication()
+            ];
+            
+            return $this->responseService->json(true, 'Form retrieved successfully', $formData);
+            
+        } catch (\Exception $e) {
+            return $this->responseService->json(false, 'An error occurred', null, 500);
+        }
+    }
+
+
 }
