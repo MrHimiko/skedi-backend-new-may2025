@@ -75,6 +75,15 @@ class FormService
             if ($data['slug']) {
                 $data['slug'] = $this->slugService->generateSlug($data['slug']);
             }
+            
+            // Initialize with default fields if no fields provided
+            if (!isset($data['fields']) || empty($data['fields'])) {
+                $data['fields'] = $form->getDefaultFields();
+            } else {
+                // Ensure system fields are included
+                $form->setFieldsJson($data['fields']);
+                $data['fields'] = $form->getFieldsJson();
+            }
 
             $constraints = [
                 'name' => [
@@ -118,7 +127,7 @@ class FormService
                 'fields' => function($value) use ($form) {
                     $fieldsArray = is_array($value) ? $value : [];
                     $form->setFieldsJson($fieldsArray);
-                    return $fieldsArray;
+                    return $form->getFieldsJson(); // This now ensures system fields
                 },
                 'settings' => function($value) use ($form) {
                     $settingsArray = is_array($value) ? $value : [];
@@ -126,18 +135,9 @@ class FormService
                     return $settingsArray;
                 },
             ];
-            
 
             $this->crudManager->create($form, $data, $constraints, $transform);
-
-            if (isset($data['fields'])) {
-                $form->setFieldsJson(is_array($data['fields']) ? $data['fields'] : []);
-            }
-            if (isset($data['settings'])) {
-                $form->setSettingsJson(is_array($data['settings']) ? $data['settings'] : []);
-            }
-            $this->entityManager->flush();
-
+            
             return $form;
         } catch (CrudException $e) {
             throw new FormsException($e->getMessage());
@@ -153,6 +153,12 @@ class FormService
                     $data['slug'] = $data['name'];
                 }
                 $data['slug'] = $this->slugService->generateSlug($data['slug']);
+            }
+            
+            // Validate fields to ensure system fields aren't removed
+            if (isset($data['fields'])) {
+                $form->setFieldsJson($data['fields']);
+                $data['fields'] = $form->getFieldsJson();
             }
 
             $constraints = [

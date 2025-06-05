@@ -129,40 +129,84 @@ class EventBookingController extends AbstractController
     #[Route('/events/{event_id}/bookings', name: 'event_bookings_create', methods: ['POST'])]  
     public function createBooking(int $organization_id, int $event_id, Request $request): JsonResponse
     {
-        
         $data = json_decode($request->getContent(), true);
         
         try {
-            
+
             $event = $this->eventService->getOne($event_id);
+
             if (!$event) {
                 return $this->responseService->json(false, 'Event was not found.');
             }
+
+            $data['event_id'] = $event->getId();
+
             $organization = $event->getOrganization();
             
             if (!$organization) {
                 return $this->responseService->json(false, 'Organization was not found.');
             }
             
-       
             if (!$event = $this->eventService->getEventByIdAndOrganization($event_id, $organization)) {
                 return $this->responseService->json(false, 'Event was not found.');
             }
-   
+            
+            // Process form data
             if (isset($data['form_data']) && is_string($data['form_data'])) {
                 $data['form_data'] = json_decode($data['form_data'], true);
             }
             
-            $data['event_id'] = $event->getId();
+            // Ensure form data has required fields
+            if (!empty($data['form_data'])) {
+                // Validate that name and email exist in form data
+                if (empty($data['form_data']['primary_contact']['name'])) {
+                    return $this->responseService->json(false, 'Name is required.', null, 400);
+                }
+                
+                if (empty($data['form_data']['primary_contact']['email'])) {
+                    return $this->responseService->json(false, 'Email is required.', null, 400);
+                }
+                
+                // Validate email format
+                if (!filter_var($data['form_data']['primary_contact']['email'], FILTER_VALIDATE_EMAIL)) {
+                    return $this->responseService->json(false, 'Invalid email format.', null, 400);
+                }
+
+            }
             
+  
             $booking = $this->bookingService->create($data);
             
             $bookingData = $booking->toArray();
             
+            // Get all guests (including those created from form data)
             $guests = $this->bookingService->getGuests($booking);
             $bookingData['guests'] = array_map(function($guest) {
                 return $guest->toArray();
             }, $guests);
+            
+            // Also create a form submission if a form is attached to the event
+            try {
+                $attachedForm = $this->formService->getFormForEvent($event);
+                if ($attachedForm && !empty($data['form_data'])) {
+                    $submissionData = [
+                        'form_id' => $attachedForm->getId(),
+                        'event_id' => $event->getId(),
+                        'booking_id' => $booking->getId(),
+                        'data' => $data['form_data'],
+                        'ip_address' => $request->getClientIp(),
+                        'user_agent' => $request->headers->get('User-Agent'),
+                        'submission_source' => 'booking'
+                    ];
+                    
+                    // Create form submission
+                    $this->entityManager->getRepository(FormSubmissionEntity::class)
+                        ->create($submissionData);
+                }
+            } catch (\Exception $e) {
+                // Log but don't fail the booking
+                error_log('Failed to create form submission for booking: ' . $e->getMessage());
+            }
             
             return $this->responseService->json(true, 'Booking created successfully.', $bookingData, 201);
         } catch (EventsException $e) {

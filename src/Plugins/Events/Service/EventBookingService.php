@@ -77,45 +77,36 @@ class EventBookingService
             if (!$event) {
                 throw new EventsException('Event not found');
             }
-
             
             // Validate time slot
             if (empty($data['start_time']) || empty($data['end_time'])) {
                 throw new EventsException('Start and end time are required');
             }
             
-            // Handle timezone if provided
-            $timezone = $data['timezone'] ?? 'UTC';
-            try {
-                new \DateTimeZone($timezone);
-            } catch (\Exception $e) {
-                $timezone = 'UTC';
-            }
-            
-            // Convert to UTC timestamps for storage
+            // Times from frontend are ALREADY in UTC - no conversion needed!
             $startTime = $data['start_time'] instanceof \DateTimeInterface 
                 ? clone $data['start_time'] 
-                : new \DateTime($data['start_time'], new \DateTimeZone($timezone));
+                : new \DateTime($data['start_time'], new \DateTimeZone('UTC'));
             
             $endTime = $data['end_time'] instanceof \DateTimeInterface 
                 ? clone $data['end_time'] 
-                : new \DateTime($data['end_time'], new \DateTimeZone($timezone));
-            
-            // Ensure timestamps are in UTC
-            if ($startTime->getTimezone()->getName() !== 'UTC') {
-                $startTime->setTimezone(new \DateTimeZone('UTC'));
-            }
-            
-            if ($endTime->getTimezone()->getName() !== 'UTC') {
-                $endTime->setTimezone(new \DateTimeZone('UTC'));
-            }
+                : new \DateTime($data['end_time'], new \DateTimeZone('UTC'));
             
             if ($startTime >= $endTime) {
                 throw new EventsException('End time must be after start time');
             }
             
-            // Check if the slot is available based on schedule, existing bookings, and host availability
-            if (!$this->scheduleService->isTimeSlotAvailableForAll($event, $startTime, $endTime)) {
+            // Extract timezone from form_data for schedule checking
+            $clientTimezone = null;
+            if (!empty($data['form_data'])) {
+                $formData = is_string($data['form_data']) ? json_decode($data['form_data'], true) : $data['form_data'];
+                if (!empty($formData['timezone'])) {
+                    $clientTimezone = $formData['timezone'];
+                }
+            }
+            
+            // Check if the slot is available - pass the client timezone for schedule validation
+            if (!$this->scheduleService->isTimeSlotAvailableForAll($event, $startTime, $endTime, $clientTimezone)) {
                 throw new EventsException('The selected time slot is not available for the event or its hosts');
             }
             
@@ -124,26 +115,25 @@ class EventBookingService
             $booking->setEvent($event);
             $booking->setStartTime($startTime);
             $booking->setEndTime($endTime);
-            $booking->setStatus('confirmed'); // Default status
+            $booking->setStatus('confirmed');
             
-            // Store original timezone in form data for reference
-            if (empty($data['form_data']) || !is_array($data['form_data'])) {
-                $data['form_data'] = [];
-            }
-            $data['form_data']['booking_timezone'] = $timezone;
-            
-            // Handle duration option selection
-            if (isset($data['duration_index']) && is_numeric($data['duration_index'])) {
-                $durations = $event->getDuration();
-                $durationIndex = (int)$data['duration_index'];
+            // Parse form_data if it's a string
+            if (!empty($data['form_data'])) {
+                $formDataArray = is_string($data['form_data']) ? json_decode($data['form_data'], true) : $data['form_data'];
                 
-                if (isset($durations[$durationIndex])) {
-                    $data['form_data']['selected_duration'] = $durations[$durationIndex];
+                // Handle duration option selection
+                if (isset($data['duration_index']) && is_numeric($data['duration_index'])) {
+                    $durations = $event->getDuration();
+                    $durationIndex = (int)$data['duration_index'];
+                    
+                    if (isset($durations[$durationIndex])) {
+                        $formDataArray['selected_duration'] = $durations[$durationIndex];
+                    }
                 }
+                
+                // Save form data
+                $booking->setFormDataFromArray($formDataArray);
             }
-            
-            // Save form data
-            $booking->setFormDataFromArray($data['form_data']);
             
             $this->entityManager->persist($booking);
             $this->entityManager->flush();
@@ -155,13 +145,38 @@ class EventBookingService
                 }
             }
             
+            // Also check if there's a primary_contact in form_data and create a guest from it
+            if (!empty($formDataArray['primary_contact'])) {
+                $primaryContact = $formDataArray['primary_contact'];
+                if (!empty($primaryContact['name']) && !empty($primaryContact['email'])) {
+                    // Check if this email already exists in guests to avoid duplicates
+                    $emailExists = false;
+                    if (!empty($data['guests'])) {
+                        foreach ($data['guests'] as $guest) {
+                            if (isset($guest['email']) && $guest['email'] === $primaryContact['email']) {
+                                $emailExists = true;
+                                break;
+                            }
+                        }
+                    }
+                    
+                    // Only add if not already in guests
+                    if (!$emailExists) {
+                        $this->addGuest($booking, [
+                            'name' => $primaryContact['name'],
+                            'email' => $primaryContact['email'],
+                            'phone' => $primaryContact['phone'] ?? null
+                        ]);
+                    }
+                }
+            }
+            
             // Create availability records for event hosts
             $this->scheduleService->handleBookingCreated($booking);
             
-
+            // Generate meeting link if needed
             $meetingInfo = $this->generateMeetingLink($booking, $data);
-
-
+            
             if ($meetingInfo) {
                 $formData = $booking->getFormDataAsArray() ?: [];
                 $formData['online_meeting'] = $meetingInfo;
@@ -176,14 +191,12 @@ class EventBookingService
                 $this->entityManager->persist($booking);
                 $this->entityManager->flush();
             }
-
+            
             // Sync with Google Calendar if integration exists
             try {
-                // Fixed reference - use $this instead of $this->eventBookingService
                 $this->syncEventBooking($booking);
             } catch (\Exception $e) {
                 // Silently catch the exception - don't let calendar sync issues prevent booking creation
-                // Do nothing with the exception
             }
             
             return $booking;
@@ -400,14 +413,23 @@ class EventBookingService
     private function addGuest(EventBookingEntity $booking, array $guestData): EventGuestEntity
     {
         try {
-            if (empty($guestData['name']) || empty($guestData['email'])) {
-                throw new EventsException('Guest must have a name and email');
+            // Debug log
+            error_log('Guest data: ' . json_encode($guestData));
+            
+            if (empty($guestData['email'])) {
+                throw new EventsException('Guest must have an email');
             }
             
             $guest = new EventGuestEntity();
             $guest->setBooking($booking);
-            $guest->setName($guestData['name']);
             $guest->setEmail($guestData['email']);
+            
+            // Name is optional - use email as name if not provided
+            $guestName = isset($guestData['name']) && !empty($guestData['name']) 
+                ? $guestData['name'] 
+                : $guestData['email'];
+                
+            $guest->setName($guestName);
             
             if (!empty($guestData['phone'])) {
                 $guest->setPhone($guestData['phone']);
@@ -416,28 +438,16 @@ class EventBookingService
             $this->entityManager->persist($guest);
             $this->entityManager->flush();
             
-            // Create a new contact record
-            $contact = new ContactEntity();
-            $contact->setName($guestData['name']);
-            $contact->setEmail($guestData['email']);
-            
-            if (!empty($guestData['phone'])) {
-                $contact->setPhone($guestData['phone']);
-            }
-            
-            // Set direct entity references instead of IDs
-            $contact->setEvent($booking->getEvent());
-            $contact->setBooking($booking);
-            
-            $this->entityManager->persist($contact);
-            $this->entityManager->flush();
+            // Don't create contact here - remove this part entirely
+            // Just return the guest
             
             return $guest;
         } catch (\Exception $e) {
+            error_log('Failed to add guest: ' . $e->getMessage());
             throw new EventsException('Failed to add guest: ' . $e->getMessage());
         }
     }
-    
+
     /**
      * Get bookings for an event within a date range
      */
@@ -828,6 +838,28 @@ class EventBookingService
                         $attendees[] = [
                             'email' => $guest['email'],
                             'name' => $guest['name'] ?? ''
+                        ];
+                    }
+                }
+            }
+            
+            // Also add primary contact as attendee if exists and not already in guests
+            if (!empty($data['form_data']['primary_contact'])) {
+                $primaryContact = $data['form_data']['primary_contact'];
+                if (!empty($primaryContact['email'])) {
+                    // Check if not already in attendees
+                    $emailExists = false;
+                    foreach ($attendees as $attendee) {
+                        if ($attendee['email'] === $primaryContact['email']) {
+                            $emailExists = true;
+                            break;
+                        }
+                    }
+                    
+                    if (!$emailExists) {
+                        $attendees[] = [
+                            'email' => $primaryContact['email'],
+                            'name' => $primaryContact['name'] ?? ''
                         ];
                     }
                 }

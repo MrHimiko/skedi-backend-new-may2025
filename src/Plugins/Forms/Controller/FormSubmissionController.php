@@ -198,7 +198,7 @@ class FormSubmissionController extends AbstractController
 
 
 
-    #[Route('/api/public/events/{event_id}/form', name: 'public_event_form_by_id', methods: ['GET'], requirements: ['event_id' => '\d+'])]
+    #[Route('/public/events/{event_id}/form', name: 'public_event_form_by_id', methods: ['GET'], requirements: ['event_id' => '\d+'])]
     public function getPublicEventFormById(int $event_id, Request $request): JsonResponse
     {
         try {

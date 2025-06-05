@@ -58,15 +58,21 @@ class FormSubmissionService
             if (!$form) {
                 throw new FormsException('Form not found');
             }
+            
+            // Validate required fields based on form configuration
+            $this->validateFormData($form, $data['data'] ?? []);
 
             // Check if form allows multiple submissions
             if (!$form->isAllowMultipleSubmissions()) {
                 $existingSubmission = null;
                 
-                if (!empty($data['submitter_email'])) {
+                // Use email from form data for duplicate checking
+                $submitterEmail = $data['data']['email'] ?? $data['submitter_email'] ?? null;
+                
+                if ($submitterEmail) {
                     $existingSubmission = $this->crudManager->findOne(FormSubmissionEntity::class, null, [
                         'form' => $form,
-                        'submitterEmail' => $data['submitter_email']
+                        'submitterEmail' => $submitterEmail
                     ]);
                 }
 
@@ -77,6 +83,15 @@ class FormSubmissionService
 
             $submission = new FormSubmissionEntity();
             $submission->setForm($form);
+            
+            // Extract submitter info from form data
+            if (!empty($data['data']['email'])) {
+                $submission->setSubmitterEmail($data['data']['email']);
+            }
+            
+            if (!empty($data['data']['name'])) {
+                $submission->setSubmitterName($data['data']['name']);
+            }
 
             // Set optional relationships
             if (!empty($data['event_id'])) {
@@ -136,6 +151,7 @@ class FormSubmissionService
             throw new FormsException($e->getMessage());
         }
     }
+    
 
     public function getSubmissionsForForm(FormEntity $form, array $filters = [], int $page = 1, int $limit = 50): array
     {
@@ -156,4 +172,68 @@ class FormSubmissionService
             throw new FormsException($e->getMessage());
         }
     }
+
+
+
+    /**
+     * Validate form data against form field configuration
+     */
+    private function validateFormData(FormEntity $form, array $submittedData): void
+    {
+        $fields = $form->getFieldsJson();
+        $errors = [];
+        
+        foreach ($fields as $field) {
+            $fieldName = $field['name'] ?? '';
+            $isRequired = $field['required'] ?? false;
+            $fieldType = $field['type'] ?? 'text';
+            
+            // Check required fields
+            if ($isRequired && empty($submittedData[$fieldName])) {
+                $errors[] = sprintf('Field "%s" is required', $field['label'] ?? $fieldName);
+            }
+            
+            // Validate field types
+            if (!empty($submittedData[$fieldName])) {
+                switch ($fieldType) {
+                    case 'email':
+                        if (!filter_var($submittedData[$fieldName], FILTER_VALIDATE_EMAIL)) {
+                            $errors[] = sprintf('Field "%s" must be a valid email address', $field['label'] ?? $fieldName);
+                        }
+                        break;
+                        
+                    case 'number':
+                        if (!is_numeric($submittedData[$fieldName])) {
+                            $errors[] = sprintf('Field "%s" must be a number', $field['label'] ?? $fieldName);
+                        }
+                        break;
+                        
+                    case 'guest_repeater':
+                        if (!is_array($submittedData[$fieldName])) {
+                            $errors[] = sprintf('Field "%s" must be an array', $field['label'] ?? $fieldName);
+                        } else {
+                            $maxGuests = $field['max_guests'] ?? 10;
+                            if (count($submittedData[$fieldName]) > $maxGuests) {
+                                $errors[] = sprintf('Maximum %d guests allowed', $maxGuests);
+                            }
+                            
+                            // Validate each guest
+                            foreach ($submittedData[$fieldName] as $index => $guest) {
+                                if (empty($guest['email'])) {
+                                    $errors[] = sprintf('Guest #%d must have an email address', $index + 1);
+                                } elseif (!filter_var($guest['email'], FILTER_VALIDATE_EMAIL)) {
+                                    $errors[] = sprintf('Guest #%d has an invalid email address', $index + 1);
+                                }
+                            }
+                        }
+                        break;
+                }
+            }
+        }
+        
+        if (!empty($errors)) {
+            throw new FormsException('Form validation failed: ' . implode('; ', $errors));
+        }
+    }
+    
 }

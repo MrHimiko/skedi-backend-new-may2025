@@ -125,16 +125,91 @@ class FormEntity
         return $this;
     }
 
+
+    public function getDefaultFields(): array
+    {
+        return [
+            [
+                'type' => 'text',
+                'name' => self::SYSTEM_FIELD_NAME,
+                'label' => 'Your Name',
+                'placeholder' => 'Enter your name',
+                'required' => true,
+                'deletable' => false,
+                'system_field' => true,
+                'order' => 1
+            ],
+            [
+                'type' => 'email',
+                'name' => self::SYSTEM_FIELD_EMAIL,
+                'label' => 'Email Address',
+                'placeholder' => 'your@email.com',
+                'required' => true,
+                'deletable' => false,
+                'system_field' => true,
+                'order' => 2
+            ],
+            [
+                'type' => 'guest_repeater',
+                'name' => self::GUEST_REPEATER_FIELD,
+                'label' => 'Add Guests',
+                'placeholder' => '',
+                'required' => false,
+                'deletable' => true,
+                'system_field' => false,
+                'max_guests' => 10,
+                'order' => 3
+            ]
+        ];
+    }
+    
+    const SYSTEM_FIELD_NAME = 'name';
+    const SYSTEM_FIELD_EMAIL = 'email';
+    const GUEST_REPEATER_FIELD = 'additional_guests';
+
+    /**
+     * Ensure system fields are always present in fields JSON
+     */
+    public function setFieldsJson(array $fieldsJson): self
+    {
+        // Get system fields
+        $systemFields = array_filter($this->getDefaultFields(), function($field) {
+            return isset($field['system_field']) && $field['system_field'] === true;
+        });
+        
+        // Check which system fields are missing
+        $existingSystemFieldNames = [];
+        foreach ($fieldsJson as $field) {
+            if (isset($field['system_field']) && $field['system_field'] === true) {
+                $existingSystemFieldNames[] = $field['name'];
+            }
+        }
+        
+        // Add missing system fields at the beginning
+        foreach ($systemFields as $systemField) {
+            if (!in_array($systemField['name'], $existingSystemFieldNames)) {
+                array_unshift($fieldsJson, $systemField);
+            }
+        }
+        
+        // Ensure system fields can't be deleted
+        foreach ($fieldsJson as &$field) {
+            if (isset($field['name']) && in_array($field['name'], [self::SYSTEM_FIELD_NAME, self::SYSTEM_FIELD_EMAIL])) {
+                $field['deletable'] = false;
+                $field['system_field'] = true;
+                $field['required'] = true;
+            }
+        }
+        
+        $this->fieldsJson = $fieldsJson;
+        return $this;
+    }
+
     public function getFieldsJson(): array
     {
         return $this->fieldsJson;
     }
 
-    public function setFieldsJson(array $fieldsJson): self
-    {
-        $this->fieldsJson = $fieldsJson;
-        return $this;
-    }
 
     public function getSettingsJson(): ?array
     {

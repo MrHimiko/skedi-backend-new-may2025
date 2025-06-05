@@ -405,8 +405,6 @@ class EventController extends AbstractController
     /* PUBLIC ROUTE WITHOUT USER AUTHENTICATION */
     /* PUBLIC ROUTE WITHOUT USER AUTHENTICATION */
     /* PUBLIC ROUTE WITHOUT USER AUTHENTICATION */
-
-
     #[Route('/public/organizations/{org_slug}/events/{event_slug}', name: 'public_event_info', methods: ['GET'])]
     public function getPublicEventInfo(string $org_slug, string $event_slug, Request $request): JsonResponse
     {
@@ -445,9 +443,15 @@ class EventController extends AbstractController
             // Add duration options with proper formatting
             $eventData['duration_options'] = $this->formatDurationOptions($event->getDuration());
             
-            // Remove sensitive data
+            // Add organization details
+            $eventData['organization'] = [
+                'id' => $organization->getId(),
+                'name' => $organization->getName(),
+                'slug' => $organization->getSlug()
+            ];
+            
+            // Remove sensitive data but keep organization_id
             unset($eventData['created_by']);
-            unset($eventData['organization_id']);
             
             // Add metadata for frontend
             $eventData['metadata'] = [
@@ -475,7 +479,7 @@ class EventController extends AbstractController
         $date = $request->query->get('date');
         $requestedDuration = $request->query->get('duration');
         $timezone = $request->query->get('timezone', 'UTC');
-        $bufferHours = $request->query->get('buffer_hours', 0); // Allow custom buffer override via query param
+        $bufferHours = $request->query->get('buffer_hours', 0); 
         
         if (!$date) {
             return $this->responseService->json(false, 'Date parameter is required.', null, 400);
