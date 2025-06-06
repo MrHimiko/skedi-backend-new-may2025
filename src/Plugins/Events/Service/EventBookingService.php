@@ -815,9 +815,9 @@ class EventBookingService
                 return null;
             }
             
-            // Generate title for the meeting
+            // Generate title for the meeting - CHANGED: Removed date/time from title
             $event = $booking->getEvent();
-            $title = $event->getName() . ' - ' . $booking->getStartTime()->format('M j, Y g:i A');
+            $title = $event->getName(); // Just the event name, no date/time
             
             // Create description with booking info
             $description = "Scheduled booking for " . $event->getName();
@@ -868,7 +868,7 @@ class EventBookingService
             // Create Google Meet link only (no calendar event)
             $meetEvent = $this->googleMeetService->createMeetLink(
                 $integration,
-                $title,
+                $title, // Now just the event name without date/time
                 $booking->getStartTime(),
                 $booking->getEndTime(),
                 $event->getId(),

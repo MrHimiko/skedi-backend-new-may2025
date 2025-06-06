@@ -354,7 +354,7 @@ class GoogleMeetService
             
             // Create a new event with conference data to generate Meet link
             $event = new \Google\Service\Calendar\Event();
-            $event->setSummary($title);
+            $event->setSummary('Skedi: ' . $title);
             
             // Set start and end times
             $startDateTime = clone $startTime;
@@ -423,15 +423,45 @@ class GoogleMeetService
                 $event->setConferenceData($conferenceData);
             }
             
-            // Set extended properties to mark this as our own event
+            // Set extended properties to mark this as our own event with enhanced metadata
             $extendedProperties = new \Google\Service\Calendar\EventExtendedProperties();
-            $private = ['skedi_meet' => 'true'];
-            $extendedProperties->setPrivate($private);
+            $privateProperties = [
+                'skedi_event' => 'true',
+                'skedi_meet' => 'true',
+                'skedi_created_at' => (new DateTime())->format('c'),
+                'skedi_integration_id' => (string)$integration->getId(),
+                'skedi_user_id' => (string)$integration->getUser()->getId()
+            ];
+            
+            // Add event and booking IDs if available
+            if ($eventId) {
+                $privateProperties['skedi_event_id'] = (string)$eventId;
+            }
+            if ($bookingId) {
+                $privateProperties['skedi_booking_id'] = (string)$bookingId;
+                $privateProperties['skedi_source_id'] = 'booking_' . $bookingId;
+            }
+            
+            $extendedProperties->setPrivate($privateProperties);
             $event->setExtendedProperties($extendedProperties);
             
             // Set description if provided
             if (!empty($options['description'])) {
                 $event->setDescription($options['description']);
+            }
+            
+            // Add attendees if provided
+            if (!empty($options['attendees']) && is_array($options['attendees'])) {
+                $attendees = [];
+                foreach ($options['attendees'] as $attendee) {
+                    $eventAttendee = new \Google\Service\Calendar\EventAttendee();
+                    $eventAttendee->setEmail($attendee['email']);
+                    if (!empty($attendee['name'])) {
+                        $eventAttendee->setDisplayName($attendee['name']);
+                    }
+                    $attendees[] = $eventAttendee;
+                }
+                $event->setAttendees($attendees);
             }
             
             // Create the event in a temporary calendar to generate Meet link

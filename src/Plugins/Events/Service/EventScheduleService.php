@@ -557,7 +557,7 @@ class EventScheduleService
             foreach ($hosts as $host) {
                 $this->userAvailabilityService->createInternalAvailability(
                     $host,
-                    $event->getName() . ' - Booking',
+                    $event->getName(),
                     $booking->getStartTime(),
                     $booking->getEndTime(),
                     $event,
@@ -616,7 +616,7 @@ class EventScheduleService
                 if (!in_array($host->getId(), $existingUserIds)) {
                     $this->userAvailabilityService->createInternalAvailability(
                         $host,
-                        $event->getName() . ' - Booking',
+                        $event->getName(),
                         $booking->getStartTime(),
                         $booking->getEndTime(),
                         $event,

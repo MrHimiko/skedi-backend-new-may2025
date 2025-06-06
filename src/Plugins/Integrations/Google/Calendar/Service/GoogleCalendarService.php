@@ -362,21 +362,46 @@ class GoogleCalendarService extends BaseCalendarIntegration
                 $event->setLocation($options['location']);
             }
             
+            // Add attendees if provided
+            if (!empty($options['attendees']) && is_array($options['attendees'])) {
+                $attendees = [];
+                foreach ($options['attendees'] as $attendee) {
+                    $eventAttendee = new \Google\Service\Calendar\EventAttendee();
+                    $eventAttendee->setEmail($attendee['email']);
+                    if (!empty($attendee['name'])) {
+                        $eventAttendee->setDisplayName($attendee['name']);
+                    }
+                    $attendees[] = $eventAttendee;
+                }
+                $event->setAttendees($attendees);
+            }
+            
             // Conference data
             if (!empty($options['conference_data'])) {
                 $this->setConferenceData($event, $options['conference_data']);
             }
             
-            // Extended properties
+            // ALWAYS set extended properties to identify Skedi events
+            $extendedProperties = new \Google\Service\Calendar\EventExtendedProperties();
+            $privateProperties = [
+                'skedi_event' => 'true',
+                'skedi_created_at' => (new DateTime())->format('c'),
+                'skedi_integration_id' => (string)$integration->getId(),
+                'skedi_user_id' => (string)$integration->getUser()->getId()
+            ];
+            
+            // Add source_id if provided
             if (!empty($options['source_id'])) {
-                $extendedProperties = new \Google\Service\Calendar\EventExtendedProperties();
-                $private = [
-                    'skedi_source_id' => $options['source_id'],
-                    'skedi_integration_id' => (string)$integration->getId()
-                ];
-                $extendedProperties->setPrivate($private);
-                $event->setExtendedProperties($extendedProperties);
+                $privateProperties['skedi_source_id'] = $options['source_id'];
             }
+            
+            // Add event type if we can determine it
+            if (!empty($options['skedi_event_type'])) {
+                $privateProperties['skedi_event_type'] = $options['skedi_event_type'];
+            }
+            
+            $extendedProperties->setPrivate($privateProperties);
+            $event->setExtendedProperties($extendedProperties);
             
             $calendarId = $options['calendar_id'] ?? 'primary';
             $createParams = [];
@@ -566,16 +591,31 @@ class GoogleCalendarService extends BaseCalendarIntegration
      */
     private function isSkediEvent(\Google\Service\Calendar\Event $event): bool
     {
+        // Check extended properties first (most reliable)
         if ($event->getExtendedProperties() && $event->getExtendedProperties()->getPrivate()) {
             $private = $event->getExtendedProperties()->getPrivate();
-            if (isset($private['skedi_event']) || isset($private['skedi_source_id'])) {
+            
+            // If it has skedi_event property, it's definitely ours
+            if (isset($private['skedi_event']) && $private['skedi_event'] === 'true') {
+                return true;
+            }
+            
+            // Legacy check for older events
+            if (isset($private['skedi_source_id'])) {
                 return true;
             }
         }
         
+        // Fallback: Check description for known patterns
         $description = $event->getDescription() ?? '';
         if (strpos($description, 'Booking for:') !== false || 
             strpos($description, 'Booking details:') !== false) {
+            return true;
+        }
+        
+        // Check if title starts with "Skedi:"
+        $title = $event->getSummary() ?? '';
+        if (strpos($title, 'Skedi:') === 0) {
             return true;
         }
         
@@ -669,4 +709,268 @@ class GoogleCalendarService extends BaseCalendarIntegration
             ];
         }
     }
+
+
+
+    /**
+     * Delete Google Calendar event for a cancelled booking
+     * 
+     * @param IntegrationEntity $integration The Google Calendar integration
+     * @param \App\Plugins\Events\Entity\EventBookingEntity $booking The cancelled booking
+     * @return void
+     * @throws IntegrationException
+     */
+    public function deleteEventForCancelledBooking(
+        IntegrationEntity $integration, 
+        \App\Plugins\Events\Entity\EventBookingEntity $booking
+    ): void {
+        try {
+            // Check rate limit
+            $this->checkRateLimit($integration, 'delete');
+            
+            // Refresh token if needed
+            $this->refreshTokenIfNeeded($integration);
+            
+            $client = $this->getGoogleClient($integration);
+            $service = new GoogleCalendar($client);
+            
+            // Build unique source ID for this booking
+            $sourceId = 'booking_' . $booking->getId();
+            
+            // Get booking details
+            $eventName = $booking->getEvent()->getName();
+            $bookingStart = $booking->getStartTime();
+            $bookingEnd = $booking->getEndTime();
+            
+            // Possible title variations to search for
+            $titleVariations = [
+                $eventName,                                                              // Original name
+                'Skedi: ' . $eventName,                                                 // With Skedi prefix
+                $eventName . ' - ' . $bookingStart->format('M j, Y g:i A'),           // With date/time
+                'Skedi: ' . $eventName . ' - ' . $bookingStart->format('M j, Y g:i A') // With both
+            ];
+            
+            // Try multiple approaches to find the event
+            $deleted = false;
+            $foundEvents = [];
+            
+            // Approach 1: Search by extended properties (most reliable)
+            try {
+                $events = $service->events->listEvents('primary', [
+                    'privateExtendedProperty' => 'skedi_source_id=' . $sourceId,
+                    'showDeleted' => false,
+                    'singleEvents' => true
+                ]);
+                
+                foreach ($events->getItems() as $event) {
+                    $foundEvents[] = ['calendarId' => 'primary', 'eventId' => $event->getId()];
+                }
+            } catch (\Exception $e) {
+                // Continue to next approach
+            }
+            
+            // Approach 2: Search by time range and title variations
+            if (empty($foundEvents)) {
+                try {
+                    // Search for events in the same time range
+                    $timeMin = clone $bookingStart;
+                    $timeMax = clone $bookingEnd;
+                    $timeMin->modify('-1 minute');
+                    $timeMax->modify('+1 minute');
+                    
+                    foreach ($titleVariations as $searchTitle) {
+                        $events = $service->events->listEvents('primary', [
+                            'timeMin' => $timeMin->format('c'),
+                            'timeMax' => $timeMax->format('c'),
+                            'q' => $searchTitle,
+                            'showDeleted' => false,
+                            'singleEvents' => true
+                        ]);
+                        
+                        foreach ($events->getItems() as $event) {
+                            // Check if this is likely our event
+                            $eventStart = new DateTime($event->getStart()->getDateTime() ?: $event->getStart()->getDate());
+                            $eventEnd = new DateTime($event->getEnd()->getDateTime() ?: $event->getEnd()->getDate());
+                            
+                            // Compare times (within 5 minutes tolerance)
+                            $startDiff = abs($eventStart->getTimestamp() - $bookingStart->getTimestamp());
+                            $endDiff = abs($eventEnd->getTimestamp() - $bookingEnd->getTimestamp());
+                            
+                            if ($startDiff <= 300 && $endDiff <= 300) {
+                                // Check if it's a Skedi-created event
+                                $description = $event->getDescription() ?? '';
+                                $eventTitle = $event->getSummary() ?? '';
+                                
+                                // Check various indicators
+                                $isSkediEvent = false;
+                                
+                                // Check description
+                                if (strpos($description, 'Booking for:') !== false || 
+                                    strpos($description, $sourceId) !== false) {
+                                    $isSkediEvent = true;
+                                }
+                                
+                                // Check if title matches any variation
+                                foreach ($titleVariations as $titleVariation) {
+                                    if ($eventTitle === $titleVariation) {
+                                        $isSkediEvent = true;
+                                        break;
+                                    }
+                                }
+                                
+                                if ($isSkediEvent) {
+                                    $foundEvents[] = ['calendarId' => 'primary', 'eventId' => $event->getId()];
+                                }
+                            }
+                        }
+                    }
+                } catch (\Exception $e) {
+                    // Continue
+                }
+            }
+            
+            // Approach 3: Check all user calendars with extended properties
+            if (empty($foundEvents)) {
+                try {
+                    $calendarList = $service->calendarList->listCalendarList();
+                    
+                    foreach ($calendarList->getItems() as $calendar) {
+                        if (!$calendar->getPrimary() && !$calendar->getSelected()) {
+                            continue;
+                        }
+                        
+                        try {
+                            $events = $service->events->listEvents($calendar->getId(), [
+                                'privateExtendedProperty' => 'skedi_source_id=' . $sourceId,
+                                'showDeleted' => false
+                            ]);
+                            
+                            foreach ($events->getItems() as $event) {
+                                $foundEvents[] = ['calendarId' => $calendar->getId(), 'eventId' => $event->getId()];
+                            }
+                        } catch (\Exception $e) {
+                            // Continue
+                        }
+                    }
+                } catch (\Exception $e) {
+                    // Continue
+                }
+            }
+            
+            // Delete all found events
+            foreach ($foundEvents as $eventInfo) {
+                try {
+                    $service->events->delete($eventInfo['calendarId'], $eventInfo['eventId']);
+                    $deleted = true;
+                } catch (\Google\Service\Exception $e) {
+                    if ($e->getCode() !== 404) {
+                        // Log but continue
+                    }
+                }
+            }
+            
+            // Also update any local database records using CrudManager
+            try {
+                // Search with more flexible criteria
+                $filters = [
+                    [
+                        'field' => 'startTime',
+                        'operator' => 'between',
+                        'value' => [
+                            (clone $bookingStart)->modify('-5 minutes'),
+                            (clone $bookingStart)->modify('+5 minutes')
+                        ]
+                    ],
+                    [
+                        'field' => 'status',
+                        'operator' => 'not_equals',
+                        'value' => 'cancelled'
+                    ]
+                ];
+                
+                $googleEvents = $this->crudManager->findMany(
+                    GoogleCalendarEventEntity::class,
+                    $filters,
+                    1,
+                    1000,
+                    [
+                        'user' => $integration->getUser(),
+                        'integration' => $integration
+                    ]
+                );
+                
+                foreach ($googleEvents as $googleEvent) {
+                    // Check if this matches our booking (within time tolerance and title match)
+                    $titleMatches = false;
+                    foreach ($titleVariations as $titleVariation) {
+                        if ($googleEvent->getTitle() === $titleVariation) {
+                            $titleMatches = true;
+                            break;
+                        }
+                    }
+                    
+                    if ($titleMatches) {
+                        $this->crudManager->update($googleEvent, [
+                            'status' => 'cancelled'
+                        ]);
+                    }
+                }
+            } catch (\Exception $e) {
+                // Continue
+            }
+        } catch (\Exception $e) {
+            throw new IntegrationException('Failed to delete Google Calendar event: ' . $e->getMessage());
+        }
+    }
+    
+    /**
+     * Delete all Google Calendar events associated with a booking
+     * This method handles multiple assignees and their integrations
+     * 
+     * @param \App\Plugins\Events\Entity\EventBookingEntity $booking
+     * @return void
+     */
+    public function deleteGoogleEventsForBooking(\App\Plugins\Events\Entity\EventBookingEntity $booking): void {
+        try {
+            $event = $booking->getEvent();
+            
+            // Get all assignees for this event using CrudManager
+            $assignees = $this->crudManager->findMany(
+                'App\Plugins\Events\Entity\EventAssigneeEntity',
+                [],
+                1,
+                1000,
+                ['event' => $event]
+            );
+            
+            foreach ($assignees as $assignee) {
+                $user = $assignee->getUser();
+                
+                // Find Google Calendar integrations for this user using CrudManager
+                $integrations = $this->crudManager->findMany(
+                    IntegrationEntity::class,
+                    [],
+                    1,
+                    100,
+                    [
+                        'user' => $user,
+                        'provider' => 'google_calendar',
+                        'status' => 'active'
+                    ]
+                );
+                
+                foreach ($integrations as $integration) {
+                    try {
+                        $this->deleteEventForCancelledBooking($integration, $booking);
+                    } catch (\Exception $e) {
+                        // Continue to next integration
+                        // Don't let one failure stop the others
+                    }
+                }
+            }
+        } catch (\Exception $e) {
+            // Silently fail - we don't want Google errors to break booking operations
+        }
+    }
+
 }

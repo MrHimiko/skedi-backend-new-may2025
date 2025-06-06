@@ -254,6 +254,7 @@ class UserBookingsController extends AbstractController
             'guests' => array_map(fn($guest) => $guest->toArray(), $guests),
             'hosts' => $hosts,
             'meeting_link' => $meetingLink,
+            'form_data' => $formData,
             'cancelled' => $booking->isCancelled(),
             'created' => $availabilityRecord->getCreated()->format('Y-m-d H:i:s'),
             'updated' => $availabilityRecord->getUpdated()->format('Y-m-d H:i:s')
