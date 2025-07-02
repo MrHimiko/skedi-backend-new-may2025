@@ -59,6 +59,11 @@ class FormEntity
     #[ORM\Column(name: "updated", type: "datetime", nullable: false, options: ["default" => "CURRENT_TIMESTAMP"])]
     private DateTimeInterface $updated;
 
+    // Use consistent system field names
+    const SYSTEM_FIELD_NAME = 'system_contact_name';
+    const SYSTEM_FIELD_EMAIL = 'system_contact_email';
+    const GUEST_REPEATER_FIELD = 'system_contact_guests';
+
     public function __construct()
     {
         $this->created = new DateTime();
@@ -125,7 +130,6 @@ class FormEntity
         return $this;
     }
 
-
     public function getDefaultFields(): array
     {
         return [
@@ -150,6 +154,7 @@ class FormEntity
                 'order' => 2
             ],
             [
+                'id' => self::GUEST_REPEATER_FIELD,
                 'type' => 'guest_repeater',
                 'name' => self::GUEST_REPEATER_FIELD,
                 'label' => 'Add Guests',
@@ -158,50 +163,65 @@ class FormEntity
                 'deletable' => true,
                 'system_field' => false,
                 'max_guests' => 10,
-                'order' => 3
+                'order' => 3,
+                'unique' => true,
+                'colSpan' => 12
             ]
         ];
     }
-    
-    const SYSTEM_FIELD_NAME = 'name';
-    const SYSTEM_FIELD_EMAIL = 'email';
-    const GUEST_REPEATER_FIELD = 'additional_guests';
 
     /**
      * Ensure system fields are always present in fields JSON
      */
     public function setFieldsJson(array $fieldsJson): self
     {
-        // Get system fields
-        $systemFields = array_filter($this->getDefaultFields(), function($field) {
-            return isset($field['system_field']) && $field['system_field'] === true;
-        });
+        // Clean up any duplicate system fields with old naming
+        $cleanedFields = [];
+        $systemFieldNames = [self::SYSTEM_FIELD_NAME, self::SYSTEM_FIELD_EMAIL, self::GUEST_REPEATER_FIELD];
+        $oldSystemNames = ['name', 'email', 'additional_guests'];
+        $foundSystemFields = [];
         
-        // Check which system fields are missing
-        $existingSystemFieldNames = [];
         foreach ($fieldsJson as $field) {
-            if (isset($field['system_field']) && $field['system_field'] === true) {
-                $existingSystemFieldNames[] = $field['name'];
+            $fieldName = $field['name'] ?? '';
+            
+            // Skip old system field names
+            if (in_array($fieldName, $oldSystemNames)) {
+                continue;
             }
+            
+            // Track which system fields we've found
+            if (in_array($fieldName, $systemFieldNames)) {
+                $foundSystemFields[$fieldName] = true;
+                
+                // Ensure system fields have correct properties
+                if ($fieldName === self::SYSTEM_FIELD_NAME || $fieldName === self::SYSTEM_FIELD_EMAIL) {
+                    $field['deletable'] = false;
+                    $field['system_field'] = true;
+                    $field['required'] = true;
+                }
+            }
+            
+            $cleanedFields[] = $field;
         }
         
         // Add missing system fields at the beginning
-        foreach ($systemFields as $systemField) {
-            if (!in_array($systemField['name'], $existingSystemFieldNames)) {
-                array_unshift($fieldsJson, $systemField);
+        $systemFieldsToAdd = [];
+        foreach ($this->getDefaultFields() as $defaultField) {
+            if (!isset($foundSystemFields[$defaultField['name']])) {
+                $systemFieldsToAdd[] = $defaultField;
             }
         }
         
-        // Ensure system fields can't be deleted
-        foreach ($fieldsJson as &$field) {
-            if (isset($field['name']) && in_array($field['name'], [self::SYSTEM_FIELD_NAME, self::SYSTEM_FIELD_EMAIL])) {
-                $field['deletable'] = false;
-                $field['system_field'] = true;
-                $field['required'] = true;
-            }
-        }
+        // Merge system fields at the beginning with cleaned fields
+        $this->fieldsJson = array_merge($systemFieldsToAdd, $cleanedFields);
         
-        $this->fieldsJson = $fieldsJson;
+        // Sort by order if order property exists
+        usort($this->fieldsJson, function($a, $b) {
+            $orderA = $a['order'] ?? 999;
+            $orderB = $b['order'] ?? 999;
+            return $orderA <=> $orderB;
+        });
+        
         return $this;
     }
 
@@ -209,7 +229,6 @@ class FormEntity
     {
         return $this->fieldsJson;
     }
-
 
     public function getSettingsJson(): ?array
     {

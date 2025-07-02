@@ -59,15 +59,21 @@ class FormSubmissionService
                 throw new FormsException('Form not found');
             }
             
+            // Normalize field names in submitted data
+            $normalizedData = $this->normalizeSubmissionData($data['data'] ?? []);
+            
             // Validate required fields based on form configuration
-            $this->validateFormData($form, $data['data'] ?? []);
+            $this->validateFormData($form, $normalizedData);
 
             // Check if form allows multiple submissions
             if (!$form->isAllowMultipleSubmissions()) {
                 $existingSubmission = null;
                 
-                // Use email from form data for duplicate checking
-                $submitterEmail = $data['data']['email'] ?? $data['submitter_email'] ?? null;
+                // Use email from normalized form data for duplicate checking
+                $submitterEmail = $normalizedData[FormEntity::SYSTEM_FIELD_EMAIL] ?? 
+                                 $normalizedData['email'] ?? 
+                                 $data['submitter_email'] ?? 
+                                 null;
                 
                 if ($submitterEmail) {
                     $existingSubmission = $this->crudManager->findOne(FormSubmissionEntity::class, null, [
@@ -84,13 +90,19 @@ class FormSubmissionService
             $submission = new FormSubmissionEntity();
             $submission->setForm($form);
             
-            // Extract submitter info from form data
-            if (!empty($data['data']['email'])) {
-                $submission->setSubmitterEmail($data['data']['email']);
+            // Extract submitter info from normalized form data
+            $email = $normalizedData[FormEntity::SYSTEM_FIELD_EMAIL] ?? 
+                    $normalizedData['email'] ?? 
+                    null;
+            if ($email) {
+                $submission->setSubmitterEmail($email);
             }
             
-            if (!empty($data['data']['name'])) {
-                $submission->setSubmitterName($data['data']['name']);
+            $name = $normalizedData[FormEntity::SYSTEM_FIELD_NAME] ?? 
+                   $normalizedData['name'] ?? 
+                   null;
+            if ($name) {
+                $submission->setSubmitterName($name);
             }
 
             // Set optional relationships
@@ -114,6 +126,9 @@ class FormSubmissionService
                     $submission->setSubmitterUser($user);
                 }
             }
+
+            // Update data with normalized values
+            $data['data'] = $normalizedData;
 
             $constraints = [
                 'data' => [
@@ -152,7 +167,6 @@ class FormSubmissionService
         }
     }
     
-
     public function getSubmissionsForForm(FormEntity $form, array $filters = [], int $page = 1, int $limit = 50): array
     {
         return $this->getMany($filters, $page, $limit, ['form' => $form]);
@@ -173,7 +187,30 @@ class FormSubmissionService
         }
     }
 
-
+    /**
+     * Normalize submission data to handle both old and new field names
+     */
+    private function normalizeSubmissionData(array $submittedData): array
+    {
+        $normalized = $submittedData;
+        
+        // Map old field names to new system field names
+        $fieldMapping = [
+            'name' => FormEntity::SYSTEM_FIELD_NAME,
+            'email' => FormEntity::SYSTEM_FIELD_EMAIL,
+            'additional_guests' => FormEntity::GUEST_REPEATER_FIELD
+        ];
+        
+        foreach ($fieldMapping as $oldName => $newName) {
+            // If old field exists but new doesn't, copy it
+            if (isset($normalized[$oldName]) && !isset($normalized[$newName])) {
+                $normalized[$newName] = $normalized[$oldName];
+                unset($normalized[$oldName]);
+            }
+        }
+        
+        return $normalized;
+    }
 
     /**
      * Validate form data against form field configuration
@@ -235,5 +272,4 @@ class FormSubmissionService
             throw new FormsException('Form validation failed: ' . implode('; ', $errors));
         }
     }
-    
 }
