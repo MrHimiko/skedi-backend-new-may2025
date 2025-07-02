@@ -35,7 +35,6 @@ services:
         tags:
             - { name: kernel.event_listener, event: kernel.exception }
 
-
     # Integration Services
     app.integration.google_calendar:
         class: App\Plugins\Integrations\Google\Calendar\Service\GoogleCalendarService
@@ -58,7 +57,44 @@ services:
     App\Plugins\Integrations\Google\Calendar\Service\GoogleCalendarService: '@app.integration.google_calendar'
     App\Plugins\Integrations\Google\Meet\Service\GoogleMeetService: '@app.integration.google_meet'
 
+    # Email Services
+    App\Plugins\Email\Service\EmailProviderInterface:
+        class: App\Plugins\Email\Service\Providers\SendGridProvider
+        arguments:
+            $apiKey: '%env(SENDGRID_API_KEY)%'
+            $logger: '@logger'
+            $templateMap:
+                meeting_scheduled: 'd-877ae9faa55c481db86b24fe1cfd0a62'  
 
+
+    App\Plugins\Email\Service\EmailService:
+        arguments:
+            $provider: '@App\Plugins\Email\Service\EmailProviderInterface'
+            $queueService: '@App\Plugins\Email\Service\EmailQueueService'
+            $templateService: '@App\Plugins\Email\Service\EmailTemplateService'
+            $logService: '@App\Plugins\Email\Service\EmailLogService'
+            $crudManager: '@App\Service\CrudManager'
+            $entityManager: '@doctrine.orm.entity_manager'
+            $logger: '@logger'
+            $queueByDefault: '%env(bool:EMAIL_QUEUE_BY_DEFAULT)%'
+
+    App\Plugins\Email\Service\EmailQueueService:
+        arguments:
+            $entityManager: '@doctrine.orm.entity_manager'
+            $queueRepository: '@App\Plugins\Email\Repository\EmailQueueRepository'
+            $crudManager: '@App\Service\CrudManager'
+
+    App\Plugins\Email\Service\EmailTemplateService:
+        arguments:
+            $entityManager: '@doctrine.orm.entity_manager'
+            $templateRepository: '@App\Plugins\Email\Repository\EmailTemplateRepository'
+            $crudManager: '@App\Service\CrudManager'
+
+    App\Plugins\Email\Service\EmailLogService:
+        arguments:
+            $entityManager: '@doctrine.orm.entity_manager'
+            $logRepository: '@App\Plugins\Email\Repository\EmailLogRepository'
+            $crudManager: '@App\Service\CrudManager'
 
     # add more service definitions when explicit configuration is needed
     # please note that last definitions always *replace* previous ones

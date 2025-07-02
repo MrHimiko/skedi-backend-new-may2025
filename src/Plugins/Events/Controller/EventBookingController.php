@@ -13,8 +13,8 @@ use App\Plugins\Events\Service\ContactService;
 use App\Plugins\Events\Exception\EventsException;
 use App\Plugins\Organizations\Service\UserOrganizationService;
 use Doctrine\ORM\EntityManagerInterface;
-
-
+use App\Plugins\Email\Service\EmailService;
+use App\Plugins\Events\Entity\EventBookingEntity;
 
 #[Route('/api/organizations/{organization_id}', requirements: ['organization_id' => '\d+'])]
 class EventBookingController extends AbstractController
@@ -25,7 +25,7 @@ class EventBookingController extends AbstractController
     private ContactService $contactService;
     private UserOrganizationService $userOrganizationService;
     private EntityManagerInterface $entityManager;
-    
+    private EmailService $emailService;
 
 
     public function __construct(
@@ -34,7 +34,8 @@ class EventBookingController extends AbstractController
         EventBookingService $bookingService,
         ContactService $contactService,
         UserOrganizationService $userOrganizationService,
-        EntityManagerInterface $entityManager 
+        EntityManagerInterface $entityManager,
+        EmailService $emailService
     ) {
         $this->responseService = $responseService;
         $this->eventService = $eventService;
@@ -42,6 +43,7 @@ class EventBookingController extends AbstractController
         $this->contactService = $contactService;
         $this->userOrganizationService = $userOrganizationService;
         $this->entityManager = $entityManager;
+         $this->emailService = $emailService;
     }
 
     #[Route('/events/{event_id}/bookings', name: 'event_bookings_get_many#', methods: ['GET'], requirements: ['event_id' => '\d+'])]
@@ -132,7 +134,6 @@ class EventBookingController extends AbstractController
         $data = json_decode($request->getContent(), true);
         
         try {
-
             $event = $this->eventService->getOne($event_id);
 
             if (!$event) {
@@ -171,11 +172,12 @@ class EventBookingController extends AbstractController
                 if (!filter_var($data['form_data']['primary_contact']['email'], FILTER_VALIDATE_EMAIL)) {
                     return $this->responseService->json(false, 'Invalid email format.', null, 400);
                 }
-
             }
             
-  
             $booking = $this->bookingService->create($data);
+            
+            // Send confirmation email
+            $this->sendBookingConfirmationEmail($booking);
             
             $bookingData = $booking->toArray();
             
@@ -326,4 +328,50 @@ class EventBookingController extends AbstractController
             return $this->responseService->json(false, $e, null, 500);
         }
     }
+
+
+
+
+    private function sendBookingConfirmationEmail(EventBookingEntity $booking): void
+    {
+        try {
+            // Extract guest information
+            $formData = $booking->getFormDataAsArray();
+            
+            if (empty($formData['primary_contact']['email'])) {
+                return;
+            }
+            
+            $guestName = $formData['primary_contact']['name'] ?? '';
+            $guestEmail = $formData['primary_contact']['email'];
+            
+            // Get event info
+            $event = $booking->getEvent();
+            $startTime = $booking->getStartTime();
+            $duration = round(($booking->getEndTime()->getTimestamp() - $startTime->getTimestamp()) / 60);
+            
+            // Send the email
+            $this->emailService->send(
+                $guestEmail,
+                'meeting_scheduled',
+                [
+                    'meeting_name' => $event->getName(),
+                    'date' => $startTime->format('F j, Y'),
+                    'time' => $startTime->format('g:i A'),
+                    'duration' => $duration . ' minutes',
+                    'guest_name' => $guestName
+                ]
+            );
+            
+        } catch (\Exception $e) {
+            // Log error but don't fail the booking
+            error_log('Failed to send booking confirmation email: ' . $e->getMessage());
+        }
+    }
+
+    
+
+
+
+    
 }

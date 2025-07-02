@@ -15,6 +15,7 @@
         "google/apiclient": "^2.18",
         "guzzlehttp/guzzle": "^7.9",
         "microsoft/microsoft-graph": "^2.0",
+        "sendgrid/sendgrid": "^8.1",
         "symfony/amazon-mailer": "7.2.*",
         "symfony/console": "7.2.*",
         "symfony/dotenv": "7.2.*",
