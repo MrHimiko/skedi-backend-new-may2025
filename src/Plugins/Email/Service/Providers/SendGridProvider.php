@@ -6,6 +6,7 @@ use App\Plugins\Email\Service\EmailProviderInterface;
 use SendGrid;
 use SendGrid\Mail\Mail;
 use SendGrid\Mail\To;
+use SendGrid\Mail\Personalization;
 use Psr\Log\LoggerInterface;
 
 class SendGridProvider implements EmailProviderInterface
@@ -40,29 +41,35 @@ class SendGridProvider implements EmailProviderInterface
             $fromName = $options['from_name'] ?? $_ENV['DEFAULT_FROM_NAME'] ?? 'Skedi';
             $email->setFrom($fromEmail, $fromName);
             
-            // Set recipient
-            $email->addTo($to, $options['to_name'] ?? null);
+            // Set template ID (use mapping if available)
+            $sendGridTemplateId = $this->templateMap[$templateId] ?? $templateId;
+            $email->setTemplateId($sendGridTemplateId);
+            
+            // Create personalization
+            $personalization = new Personalization();
+            $personalization->addTo(new To($to, $options['to_name'] ?? null));
             
             // Add CC if provided
             if (!empty($options['cc'])) {
                 foreach ((array)$options['cc'] as $cc) {
-                    $email->addCc($cc);
+                    $personalization->addCc(new To($cc));
                 }
             }
             
             // Add BCC if provided
             if (!empty($options['bcc'])) {
                 foreach ((array)$options['bcc'] as $bcc) {
-                    $email->addBcc($bcc);
+                    $personalization->addBcc(new To($bcc));
                 }
             }
             
-            // Set template ID (use mapping if available)
-            $sendGridTemplateId = $this->templateMap[$templateId] ?? $templateId;
-            $email->setTemplateId($sendGridTemplateId);
+            // Add dynamic template data to personalization
+            foreach ($data as $key => $value) {
+                $personalization->addDynamicTemplateData($key, $value);
+            }
             
-            // Set dynamic template data
-            $email->addDynamicTemplateDatas($data);
+            // Add personalization to email
+            $email->addPersonalization($personalization);
             
             // Set reply-to if provided
             if (!empty($options['reply_to'])) {
@@ -81,6 +88,14 @@ class SendGridProvider implements EmailProviderInterface
                     );
                 }
             }
+            
+            // Log the data being sent for debugging
+            $this->logger->info('Sending SendGrid email', [
+                'to' => $to,
+                'template' => $templateId,
+                'sendgrid_template' => $sendGridTemplateId,
+                'data' => $data
+            ]);
             
             // Send the email
             $response = $this->client->send($email);
@@ -109,7 +124,8 @@ class SendGridProvider implements EmailProviderInterface
                     'template' => $templateId,
                     'sendgrid_template' => $sendGridTemplateId,
                     'status' => $response->statusCode(),
-                    'body' => $response->body()
+                    'body' => $response->body(),
+                    'data' => $data
                 ]);
                 
                 throw new \Exception("SendGrid error ({$response->statusCode()}): {$errorMessage}");
@@ -121,7 +137,8 @@ class SendGridProvider implements EmailProviderInterface
             $this->logger->error('SendGrid email error', [
                 'to' => $to,
                 'template' => $templateId,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
+                'data' => $data
             ]);
             
             throw $e;
@@ -148,12 +165,19 @@ class SendGridProvider implements EmailProviderInterface
             
             // Add personalizations for each recipient
             foreach ($recipients as $recipient) {
-                $to = new To(
+                $personalization = new Personalization();
+                $personalization->addTo(new To(
                     $recipient['email'],
-                    $recipient['name'] ?? null,
-                    array_merge($globalData, $recipient['data'] ?? [])
-                );
-                $email->addTo($to);
+                    $recipient['name'] ?? null
+                ));
+                
+                // Add dynamic template data
+                $recipientData = array_merge($globalData, $recipient['data'] ?? []);
+                foreach ($recipientData as $key => $value) {
+                    $personalization->addDynamicTemplateData($key, $value);
+                }
+                
+                $email->addPersonalization($personalization);
             }
             
             // Send the email

@@ -332,17 +332,17 @@ class EventBookingController extends AbstractController
 
 
 
-    private function sendBookingConfirmationEmail(EventBookingEntity $booking): void
+   private function sendBookingConfirmationEmail(EventBookingEntity $booking): void
     {
         try {
-            // Extract guest information
             $formData = $booking->getFormDataAsArray();
             
-            if (empty($formData['primary_contact']['email'])) {
+            if (empty($formData['primary_contact']['name']) || empty($formData['primary_contact']['email'])) {
+                // No contact info, skip email
                 return;
             }
             
-            $guestName = $formData['primary_contact']['name'] ?? '';
+            $guestName = $formData['primary_contact']['name'] ?? 'Guest';
             $guestEmail = $formData['primary_contact']['email'];
             
             // Get event info
@@ -350,28 +350,116 @@ class EventBookingController extends AbstractController
             $startTime = $booking->getStartTime();
             $duration = round(($booking->getEndTime()->getTimestamp() - $startTime->getTimestamp()) / 60);
             
-            // Send the email
+            // Get organizer info - the event creator
+            $organizer = $event->getCreatedBy();
+            $organizerName = $organizer ? $organizer->getName() : 'Organizer';
+            
+            // Get organization info for company name
+            $organization = $event->getOrganization();
+            $companyName = $organization ? $organization->getName() : '';
+            
+            // Get meeting link if available
+            $meetingLink = '';
+            $rescheduleLink = '';
+            
+            // Check if meeting link was generated and stored in form data
+            $formDataArray = $booking->getFormDataAsArray();
+            if (!empty($formDataArray['online_meeting']['link'])) {
+                $meetingLink = $formDataArray['online_meeting']['link'];
+            } elseif (!empty($formDataArray['meeting_link'])) {
+                $meetingLink = $formDataArray['meeting_link'];
+            }
+            
+            // Generate reschedule link - you'll need to adjust this based on your URL structure
+            $baseUrl = $_ENV['APP_URL'] ?? 'https://app.skedi.com';
+            $orgSlug = $organization ? $organization->getSlug() : '';
+            $eventSlug = $event->getSlug();
+            $rescheduleLink = $baseUrl . '/organizations/' . $orgSlug . '/events/' . $eventSlug . '/bookings/' . $booking->getId() . '/reschedule';
+            
+            // Determine location
+            $location = 'Online Meeting'; // Default
+            $eventLocation = $event->getLocation();
+            
+            if ($eventLocation && is_array($eventLocation)) {
+                // Check if it's a single location with 'type' key
+                if (isset($eventLocation['type'])) {
+                    switch ($eventLocation['type']) {
+                        case 'in_person':
+                            $location = $eventLocation['address'] ?? 'In-Person Meeting';
+                            break;
+                        case 'phone':
+                            $location = 'Phone Call';
+                            break;
+                        case 'google_meet':
+                            $location = 'Google Meet';
+                            break;
+                        case 'zoom':
+                            $location = 'Zoom Meeting';
+                            break;
+                        case 'custom':
+                            $location = $eventLocation['label'] ?? 'Custom Location';
+                            break;
+                        default:
+                            $location = 'Online Meeting';
+                    }
+                }
+                // Could be array of locations - just use the first one
+                elseif (is_array($eventLocation) && !empty($eventLocation[0])) {
+                    $firstLocation = $eventLocation[0];
+                    if (isset($firstLocation['type']) && $firstLocation['type'] === 'in_person') {
+                        $location = $firstLocation['address'] ?? 'In-Person Meeting';
+                    } else {
+                        $location = 'Online Meeting';
+                    }
+                }
+            }
+            
+            // Send the email with variables matching the SendGrid template
             $this->emailService->send(
                 $guestEmail,
                 'meeting_scheduled',
                 [
+                    // Guest info
+                    'guest_name' => $guestName,
+                    
+                    // Meeting details - these MUST match your SendGrid template variables exactly
                     'meeting_name' => $event->getName(),
+                    'meeting_date' => $startTime->format('F j, Y'),
+                    'meeting_time' => $startTime->format('g:i A'),
+                    'meeting_duration' => $duration,  // SendGrid might expect just the number
+                    'meeting_location' => $location,
+                    'meeting_link' => $meetingLink,
+                    
+                    // Organizer info
+                    'organizer_name' => $organizerName,
+                    'company_name' => $companyName,
+                    
+                    // Action links
+                    'reschedule_link' => $rescheduleLink,
+                    
+                    // Keep original fields for backward compatibility
                     'date' => $startTime->format('F j, Y'),
                     'time' => $startTime->format('g:i A'),
-                    'duration' => $duration . ' minutes',
-                    'guest_name' => $guestName
+                    'duration' => $duration . ' minutes'
                 ]
             );
             
         } catch (\Exception $e) {
             // Log error but don't fail the booking
             error_log('Failed to send booking confirmation email: ' . $e->getMessage());
+            
+            // Optionally log more details for debugging
+            if ($_ENV['APP_DEBUG'] ?? false) {
+                error_log('Email data: ' . json_encode([
+                    'to' => $guestEmail ?? 'unknown',
+                    'template' => 'meeting_scheduled',
+                    'error' => $e->getMessage(),
+                    'trace' => $e->getTraceAsString()
+                ]));
+            }
         }
     }
 
     
-
-
-
-    
+   
 }

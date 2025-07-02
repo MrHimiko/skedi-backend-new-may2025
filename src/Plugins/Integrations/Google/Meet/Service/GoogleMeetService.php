@@ -344,11 +344,16 @@ class GoogleMeetService
         array $options = []
     ): GoogleMeetEventEntity {
         try {
-            // Check if token needs refresh
-            if ($integration->getTokenExpires() && $integration->getTokenExpires() < new DateTime()) {
+
+          
+            $tokenExpires = $integration->getTokenExpires();
+            if (!$tokenExpires || $tokenExpires < new DateTime('+5 minutes')) {
+                if (!$integration->getRefreshToken()) {
+                    throw new IntegrationException('No refresh token available. Please reconnect your Google account.');
+                }
                 $this->refreshToken($integration);
             }
-            
+
             $client = $this->getGoogleClient($integration);
             $service = new GoogleCalendar($client);
             
