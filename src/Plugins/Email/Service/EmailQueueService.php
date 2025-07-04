@@ -50,23 +50,26 @@ class EmailQueueService
     /**
      * Get pending emails from queue
      */
-   public function getPending(int $limit = 50): array
+    public function getPending(int $limit = 50): array
     {
-        // Using findMany instead of getMany
-        $results = $this->crudManager->findMany(
-            EmailQueueEntity::class,
-            [], // filters
-            1,  // page
-            $limit, // limit
-            [
-                'status' => 'pending' // basic criteria
-            ]
-        );
+        $now = new \DateTime();
         
-        // Filter for pending or retry status
-        return array_filter($results, function($item) {
-            return in_array($item->getStatus(), ['pending', 'retry']);
-        });
+        return $this->crudManager->findMany(
+            EmailQueueEntity::class,
+            [], 
+            1,  
+            $limit,
+            [], 
+            function($queryBuilder) use ($now) {
+                $queryBuilder
+                    ->andWhere('t1.status IN (:statuses)')
+                    ->andWhere('(t1.scheduledAt IS NULL OR t1.scheduledAt <= :now)')
+                    ->setParameter('statuses', ['pending', 'retry'])
+                    ->setParameter('now', $now)
+                    ->orderBy('t1.priority', 'DESC')
+                    ->addOrderBy('t1.createdAt', 'ASC');
+            }
+        );
     }
     
     /**

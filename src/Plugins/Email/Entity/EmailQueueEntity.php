@@ -3,6 +3,7 @@
 namespace App\Plugins\Email\Entity;
 
 use App\Plugins\Email\Repository\EmailQueueRepository;
+use App\Plugins\Events\Entity\EventBookingEntity;
 use Doctrine\ORM\Mapping as ORM;
 
 #[ORM\Entity(repositoryClass: EmailQueueRepository::class)]
@@ -38,6 +39,14 @@ class EmailQueueEntity
     
     #[ORM\Column(type: 'text', nullable: true)]
     private ?string $lastError = null;
+
+    #[ORM\ManyToOne(targetEntity: EventBookingEntity::class)]
+    #[ORM\JoinColumn(nullable: true, onDelete: 'CASCADE')]
+    private ?EventBookingEntity $booking = null;
+
+    #[ORM\Column(length: 20, nullable: true)]
+    private ?string $reminderType = null;
+
     
     #[ORM\Column(nullable: true)]
     private ?string $messageId = null;
@@ -186,4 +195,29 @@ class EmailQueueEntity
     {
         return $this->createdAt;
     }
+
+
+    public function getBooking(): ?EventBookingEntity
+    {
+        return $this->booking;
+    }
+
+    public function setBooking(?EventBookingEntity $booking): self
+    {
+        $this->booking = $booking;
+        return $this;
+    }
+
+    public function getReminderType(): ?string
+    {
+        return $this->reminderType;
+    }
+
+    public function setReminderType(?string $reminderType): self
+    {
+        $this->reminderType = $reminderType;
+        return $this;
+    }
+
+
 }

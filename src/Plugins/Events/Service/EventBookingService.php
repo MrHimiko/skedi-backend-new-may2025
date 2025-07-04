@@ -15,7 +15,7 @@ use App\Plugins\Events\Exception\EventsException;
 use App\Plugins\Integrations\Google\Calendar\Service\GoogleCalendarService;
 //use App\Plugins\Integrations\Microsoft\Outlook\Service\OutlookCalendarService;
 use App\Plugins\Integrations\Google\Meet\Service\GoogleMeetService;
-
+use App\Plugins\Events\Service\BookingReminderService;
 use DateTime;
 
 class EventBookingService
@@ -27,6 +27,8 @@ class EventBookingService
     private GoogleCalendarService $googleCalendarService;
     //private OutlookCalendarService $outlookCalendarService;
     private GoogleMeetService $googleMeetService;
+    private BookingReminderService $reminderService;
+    
 
     public function __construct(
         CrudManager $crudManager,
@@ -35,7 +37,9 @@ class EventBookingService
         EventScheduleService $scheduleService,
         //OutlookCalendarService $outlookCalendarService,
         GoogleCalendarService $googleCalendarService,
-        GoogleMeetService $googleMeetService
+        GoogleMeetService $googleMeetService,
+        BookingReminderService $reminderService,
+        
     ) {
         $this->crudManager = $crudManager;
         $this->entityManager = $entityManager;
@@ -44,6 +48,7 @@ class EventBookingService
         $this->googleCalendarService = $googleCalendarService;
         //$this->outlookCalendarService = $outlookCalendarService;
         $this->googleMeetService = $googleMeetService;
+        $this->reminderService = $reminderService;
     }
 
     public function getMany(array $filters, int $page, int $limit, array $criteria = []): array
@@ -306,7 +311,7 @@ class EventBookingService
             if ($isCancellation) {
                 // Update availability records
                 $this->scheduleService->handleBookingCancelled($booking);
-                
+                $this->reminderService->cancelRemindersForBooking($booking);
                 // Delete from Google Calendar
                 try {
                     // Get all assignees for this event
@@ -343,6 +348,7 @@ class EventBookingService
             // Handle time changes for non-cancelled bookings
             else if ($timesChanged && !$booking->isCancelled()) {
                 $this->scheduleService->handleBookingUpdated($booking);
+                $this->reminderService->updateRemindersForBooking($booking);
             }
         } catch (\Exception $e) {
             throw new EventsException('Failed to update booking: ' . $e->getMessage());

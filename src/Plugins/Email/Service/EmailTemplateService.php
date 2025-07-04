@@ -111,6 +111,28 @@ class EmailTemplateService
                     'location' => 'TBD'
                 ],
                 'required_fields' => ['meeting_name', 'date', 'time', 'duration']
+            ],
+            [
+                'name' => 'meeting_scheduled_host',
+                'provider_id' => 'd-f4fdf8f2e57f48e194f86d93c4cb72ee', 
+                'description' => 'Sent to host when a meeting is scheduled',
+                'default_data' => [
+                    'meeting_name' => 'Meeting',
+                    'location' => 'TBD',
+                    'guest_message' => ''
+                ],
+                'required_fields' => ['meeting_name', 'date', 'time', 'duration']
+            ],
+            [
+                'name' => 'meeting_reminder',
+                'provider_id' => 'd-83e3b63d86414549ab1c64522088d31f', 
+                'description' => 'Sent reminders to both hosts & guests',
+                'default_data' => [
+                    'meeting_name' => 'Meeting',
+                    'location' => 'TBD',
+                    'guest_message' => ''
+                ],
+                'required_fields' => ['meeting_name', 'date', 'time', 'duration']
             ]
         ];
         
