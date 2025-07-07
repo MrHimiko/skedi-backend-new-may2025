@@ -1,11 +1,10 @@
 <?php
 
-namespace App\Plugins\Events\Repository;
+namespace App\Plugins\Contacts\Repository;
 
+use App\Plugins\Contacts\Entity\ContactEntity;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\Persistence\ManagerRegistry;
-
-use App\Plugins\Events\Entity\ContactEntity;
 
 class ContactRepository extends ServiceEntityRepository
 {

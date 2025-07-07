@@ -275,7 +275,8 @@ class EventScheduleService
         EventEntity $event, 
         DateTimeInterface $date, 
         ?int $durationMinutes = null, 
-        ?string $clientTimezone = null
+        ?string $clientTimezone = null,
+        int $bufferHours = 1 
     ): array {
         // Get available slots based on event schedule
         $slots = $this->getBaseAvailableTimeSlots($event, $date, $durationMinutes, $clientTimezone);
@@ -312,7 +313,8 @@ class EventScheduleService
         EventEntity $event, 
         DateTimeInterface $date, 
         ?int $durationMinutes = null, 
-        ?string $clientTimezone = null
+        ?string $clientTimezone = null,
+        int $bufferHours = 1
     ): array {
         // Set default timezone if not provided
         if (!$clientTimezone) {

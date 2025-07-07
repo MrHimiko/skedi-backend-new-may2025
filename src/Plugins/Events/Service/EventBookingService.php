@@ -16,6 +16,7 @@ use App\Plugins\Integrations\Google\Calendar\Service\GoogleCalendarService;
 //use App\Plugins\Integrations\Microsoft\Outlook\Service\OutlookCalendarService;
 use App\Plugins\Integrations\Google\Meet\Service\GoogleMeetService;
 use App\Plugins\Events\Service\BookingReminderService;
+use App\Plugins\Contacts\Service\ContactService;
 use DateTime;
 
 class EventBookingService

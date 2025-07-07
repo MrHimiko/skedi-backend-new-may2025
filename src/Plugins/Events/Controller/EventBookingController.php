@@ -9,7 +9,6 @@ use Symfony\Component\HttpFoundation\Request;
 use App\Service\ResponseService;
 use App\Plugins\Events\Service\EventService;
 use App\Plugins\Events\Service\EventBookingService;
-use App\Plugins\Events\Service\ContactService;
 use App\Plugins\Events\Exception\EventsException;
 use App\Plugins\Organizations\Service\UserOrganizationService;
 use Doctrine\ORM\EntityManagerInterface;
@@ -17,7 +16,7 @@ use App\Plugins\Email\Service\EmailService;
 use App\Plugins\Events\Entity\EventBookingEntity;
 use App\Plugins\Events\Service\EventAssigneeService;
 use App\Plugins\Events\Service\BookingReminderService;
-
+use App\Plugins\Contacts\Service\ContactService;
 
 #[Route('/api/organizations/{organization_id}', requirements: ['organization_id' => '\d+'])]
 class EventBookingController extends AbstractController
@@ -184,6 +183,14 @@ class EventBookingController extends AbstractController
             }
             
             $booking = $this->bookingService->create($data);
+            
+            // Create or update contact from booking
+            try {
+                $this->contactService->createOrUpdateFromBooking($booking);
+            } catch (\Exception $e) {
+                // Log error but don't fail the booking
+                error_log('Failed to create contact from booking: ' . $e->getMessage());
+            }
             
             // Send confirmation email
             $this->sendBookingConfirmationEmail($booking);

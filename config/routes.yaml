@@ -18,10 +18,16 @@ forms:
     resource: ../src/Plugins/Forms/Controller/
     type: attribute
 
+contacts:
+    resource: ../src/Plugins/Contacts/Controller/
+    type: attribute
+
+
 
 integrations:
     resource: ../src/Plugins/Integrations/Common/Controller/
     type: attribute
+
 
 google_calendar:
     resource: ../src/Plugins/Integrations/Google/Calendar/Controller/

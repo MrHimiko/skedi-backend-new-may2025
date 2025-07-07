@@ -68,6 +68,13 @@ doctrine:
                 prefix: 'App\Plugins\Email\Entity'
                 alias: Email
 
+            Contacts:
+                is_bundle: false
+                type: attribute
+                dir: '%kernel.project_dir%/src/Plugins/Contacts/Entity'
+                prefix: 'App\Plugins\Contacts\Entity'
+                alias: Contacts
+
 
             Integrations:
                 is_bundle: false
