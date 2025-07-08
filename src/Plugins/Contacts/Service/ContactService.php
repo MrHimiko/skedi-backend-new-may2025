@@ -227,7 +227,20 @@ class ContactService
             // Get organization contacts using CrudManager
             $orgContacts = $this->getMany($organization, $filters, $page, $limit);
             
-            // CrudManager returns array of entities directly
+            // Filter by search if provided
+            if (!empty($filters['search'])) {
+                $searchTerm = strtolower($filters['search']);
+                $orgContacts = array_filter($orgContacts, function($orgContact) use ($searchTerm) {
+                    $contact = $orgContact->getContact();
+                    $name = strtolower($contact->getName() ?? '');
+                    $email = strtolower($contact->getEmail());
+                    
+                    return strpos($name, $searchTerm) !== false || strpos($email, $searchTerm) !== false;
+                });
+                $orgContacts = array_values($orgContacts); // Reset array keys
+            }
+            
+            // Process contacts to add meeting info
             $contactsData = [];
             foreach ($orgContacts as $orgContact) {
                 $contact = $orgContact->getContact();

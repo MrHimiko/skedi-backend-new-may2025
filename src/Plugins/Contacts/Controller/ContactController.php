@@ -58,7 +58,8 @@ class ContactController extends AbstractController
                 'search' => $request->query->get('search', '')
             ];
 
-            // Get contacts with meeting info
+            // For now, just get all contacts for the organization
+            // We'll handle the host filtering in the frontend
             $result = $this->contactService->getContactsWithMeetingInfo(
                 $organization,
                 $filters,
@@ -218,4 +219,8 @@ class ContactController extends AbstractController
             return $this->responseService->json(false, 'An error occurred.', null, 500);
         }
     }
+
+
+
+
 }
