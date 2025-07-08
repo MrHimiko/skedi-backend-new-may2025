@@ -57,15 +57,58 @@ class ContactController extends AbstractController
             $filters = [
                 'search' => $request->query->get('search', '')
             ];
-
-            // For now, just get all contacts for the organization
-            // We'll handle the host filtering in the frontend
+            
+            // Check if user is admin/owner of the organization
+            $userOrg = $this->userOrganizationService->getOrganizationByUser($organization_id, $user);
+            $isAdmin = false;
+            
+            if ($userOrg && isset($userOrg->role)) {
+                $role = strtolower($userOrg->role);
+                $isAdmin = in_array($role, ['admin', 'owner', 'creator']);
+            }
+            
+            // Get all contacts for the organization
             $result = $this->contactService->getContactsWithMeetingInfo(
                 $organization,
                 $filters,
                 $page,
                 $limit
             );
+            
+            // If not admin, filter the results to only show contacts where user is a host
+            if (!$isAdmin && isset($result['data'])) {
+                $filteredData = [];
+                
+                foreach ($result['data'] as $contactData) {
+                    // Check if this user has a host_contact relationship
+                    $contact = $this->entityManager->find(ContactEntity::class, $contactData['contact']['id']);
+                    
+                    $hostContact = $this->entityManager->getRepository(HostContactEntity::class)
+                        ->findOneBy([
+                            'contact' => $contact,
+                            'host' => $user,
+                            'organization' => $organization,
+                            'deleted' => false
+                        ]);
+                    
+                    if ($hostContact) {
+                        // Add host info to the contact data
+                        $contactData['host_info'] = [
+                            'meeting_count' => $hostContact->getMeetingCount(),
+                            'first_meeting' => $hostContact->getFirstMeeting() ? 
+                                $hostContact->getFirstMeeting()->format('Y-m-d H:i:s') : null,
+                            'last_meeting' => $hostContact->getLastMeeting() ? 
+                                $hostContact->getLastMeeting()->format('Y-m-d H:i:s') : null,
+                            'is_favorite' => $hostContact->getIsFavorite()
+                        ];
+                        
+                        $filteredData[] = $contactData;
+                    }
+                }
+                
+                $result['data'] = $filteredData;
+                $result['count'] = count($filteredData);
+            }
 
             return $this->responseService->json(true, 'Contacts retrieved successfully.', $result);
         } catch (ContactsException $e) {

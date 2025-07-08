@@ -27,9 +27,10 @@ class FormEntity
     #[ORM\Column(name: "description", type: "text", nullable: true)]
     private ?string $description = null;
 
+    // Made nullable - forms are now global
     #[ORM\ManyToOne(targetEntity: OrganizationEntity::class)]
-    #[ORM\JoinColumn(name: "organization_id", referencedColumnName: "id", nullable: false)]
-    private OrganizationEntity $organization;
+    #[ORM\JoinColumn(name: "organization_id", referencedColumnName: "id", nullable: true)]
+    private ?OrganizationEntity $organization = null;
 
     #[ORM\ManyToOne(targetEntity: UserEntity::class)]
     #[ORM\JoinColumn(name: "created_by", referencedColumnName: "id", nullable: false)]
@@ -108,12 +109,12 @@ class FormEntity
         return $this;
     }
 
-    public function getOrganization(): OrganizationEntity
+    public function getOrganization(): ?OrganizationEntity
     {
         return $this->organization;
     }
 
-    public function setOrganization(OrganizationEntity $organization): self
+    public function setOrganization(?OrganizationEntity $organization): self
     {
         $this->organization = $organization;
         return $this;
@@ -185,43 +186,30 @@ class FormEntity
             $fieldName = $field['name'] ?? '';
             
             // Skip old system field names
-            if (in_array($fieldName, $oldSystemNames)) {
+            if (in_array($fieldName, $oldSystemNames) && !empty($field['system_field'])) {
                 continue;
             }
             
-            // Track which system fields we've found
+            // Track found system fields
             if (in_array($fieldName, $systemFieldNames)) {
                 $foundSystemFields[$fieldName] = true;
-                
-                // Ensure system fields have correct properties
-                if ($fieldName === self::SYSTEM_FIELD_NAME || $fieldName === self::SYSTEM_FIELD_EMAIL) {
-                    $field['deletable'] = false;
-                    $field['system_field'] = true;
-                    $field['required'] = true;
-                }
             }
             
             $cleanedFields[] = $field;
         }
         
-        // Add missing system fields at the beginning
-        $systemFieldsToAdd = [];
-        foreach ($this->getDefaultFields() as $defaultField) {
+        // Add missing system fields
+        $defaultFields = $this->getDefaultFields();
+        foreach ($defaultFields as $defaultField) {
             if (!isset($foundSystemFields[$defaultField['name']])) {
-                $systemFieldsToAdd[] = $defaultField;
+                // Only add required system fields (name and email)
+                if (in_array($defaultField['name'], [self::SYSTEM_FIELD_NAME, self::SYSTEM_FIELD_EMAIL])) {
+                    array_unshift($cleanedFields, $defaultField);
+                }
             }
         }
         
-        // Merge system fields at the beginning with cleaned fields
-        $this->fieldsJson = array_merge($systemFieldsToAdd, $cleanedFields);
-        
-        // Sort by order if order property exists
-        usort($this->fieldsJson, function($a, $b) {
-            $orderA = $a['order'] ?? 999;
-            $orderB = $b['order'] ?? 999;
-            return $orderA <=> $orderB;
-        });
-        
+        $this->fieldsJson = $cleanedFields;
         return $this;
     }
 
@@ -290,13 +278,25 @@ class FormEntity
         return $this->created;
     }
 
+    public function setCreated(DateTimeInterface $created): self
+    {
+        $this->created = $created;
+        return $this;
+    }
+
     public function getUpdated(): DateTimeInterface
     {
         return $this->updated;
     }
 
+    public function setUpdated(DateTimeInterface $updated): self
+    {
+        $this->updated = $updated;
+        return $this;
+    }
+
     #[ORM\PreUpdate]
-    public function updateTimestamp(): void
+    public function preUpdate(): void
     {
         $this->updated = new DateTime();
     }
@@ -308,16 +308,23 @@ class FormEntity
             'name' => $this->getName(),
             'slug' => $this->getSlug(),
             'description' => $this->getDescription(),
-            'organization_id' => $this->getOrganization()->getId(),
-            'created_by' => $this->getCreatedBy()->getId(),
+            'organization' => $this->getOrganization() ? [
+                'id' => $this->getOrganization()->getId(),
+                'name' => $this->getOrganization()->getName(),
+                'slug' => $this->getOrganization()->getSlug()
+            ] : null,
+            'created_by' => [
+                'id' => $this->getCreatedBy()->getId(),
+                'name' => $this->getCreatedBy()->getName(),
+                'email' => $this->getCreatedBy()->getEmail()
+            ],
             'fields' => $this->getFieldsJson(),
             'settings' => $this->getSettingsJson(),
             'is_active' => $this->isActive(),
             'allow_multiple_submissions' => $this->isAllowMultipleSubmissions(),
             'requires_authentication' => $this->isRequiresAuthentication(),
-            'deleted' => $this->isDeleted(),
             'created' => $this->getCreated()->format('Y-m-d H:i:s'),
-            'updated' => $this->getUpdated()->format('Y-m-d H:i:s'),
+            'updated' => $this->getUpdated()->format('Y-m-d H:i:s')
         ];
     }
 }

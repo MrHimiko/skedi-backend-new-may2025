@@ -13,7 +13,7 @@ use App\Plugins\Forms\Exception\FormsException;
 use App\Plugins\Organizations\Service\UserOrganizationService;
 use App\Plugins\Organizations\Service\OrganizationService;
 use App\Plugins\Events\Service\EventService;
-
+use App\Plugins\Forms\Entity\FormEntity;
 
 #[Route('/api')]
 class FormSubmissionController extends AbstractController
@@ -209,30 +209,176 @@ class FormSubmissionController extends AbstractController
                 return $this->responseService->json(false, 'Event not found', null, 404);
             }
             
-            // Get form attached to this event
+            // Try to get custom form attached to event
             $form = $this->formService->getFormForEvent($event);
             
-            if (!$form) {
-                return $this->responseService->json(false, 'No form attached to this event', null, 404);
+            if ($form && !$form->isDeleted() && $form->isActive()) {
+                // Return the custom form
+                $formData = $form->toArray();
+                
+                // Remove sensitive data
+                unset($formData['created_by']);
+                
+                return $this->responseService->json(true, 'retrieve', $formData);
             }
             
-            // Return form data
-            $formData = [
-                'id' => $form->getId(),
-                'name' => $form->getName(),
-                'description' => $form->getDescription(),
-                'fields' => $form->getFieldsJson(),
-                'settings' => $form->getSettingsJson(),
-                'allow_multiple_submissions' => $form->isAllowMultipleSubmissions(),
-                'requires_authentication' => $form->isRequiresAuthentication()
-            ];
+            // No custom form attached, return default form structure
+            $defaultForm = $this->getDefaultFormStructure();
             
-            return $this->responseService->json(true, 'Form retrieved successfully', $formData);
+            return $this->responseService->json(true, 'retrieve', $defaultForm);
             
+        } catch (FormsException $e) {
+            return $this->responseService->json(false, $e->getMessage(), null, 400);
         } catch (\Exception $e) {
-            return $this->responseService->json(false, 'An error occurred', null, 500);
+            return $this->responseService->json(false, $e, null, 500);
         }
     }
 
+    /**
+     * Get the default form structure when no custom form is attached
+     */
+    private function getDefaultFormStructure(): array
+    {
+        return [
+            'id' => 'default-form',
+            'name' => 'Default Booking Form',
+            'slug' => 'default-form',
+            'description' => 'Default form for event bookings',
+            'fields' => [
+                [
+                    'id' => FormEntity::SYSTEM_FIELD_NAME,
+                    'type' => 'text',
+                    'name' => FormEntity::SYSTEM_FIELD_NAME,
+                    'label' => 'Your Name',
+                    'placeholder' => 'Enter your name',
+                    'required' => true,
+                    'deletable' => false,
+                    'system_field' => true,
+                    'order' => 1,
+                    'colSpan' => 12
+                ],
+                [
+                    'id' => FormEntity::SYSTEM_FIELD_EMAIL,
+                    'type' => 'email',
+                    'name' => FormEntity::SYSTEM_FIELD_EMAIL,
+                    'label' => 'Email Address',
+                    'placeholder' => 'your@email.com',
+                    'required' => true,
+                    'deletable' => false,
+                    'system_field' => true,
+                    'order' => 2,
+                    'colSpan' => 12
+                ],
+                [
+                    'id' => 'notes',
+                    'type' => 'textarea',
+                    'name' => 'notes',
+                    'label' => 'Notes (Optional)',
+                    'placeholder' => 'Any additional information...',
+                    'required' => false,
+                    'deletable' => true,
+                    'system_field' => false,
+                    'order' => 3,
+                    'colSpan' => 12,
+                    'rows' => 3
+                ],
+                [
+                    'id' => FormEntity::GUEST_REPEATER_FIELD,
+                    'type' => 'guest_repeater',
+                    'name' => FormEntity::GUEST_REPEATER_FIELD,
+                    'label' => 'Add Guests',
+                    'placeholder' => '',
+                    'required' => false,
+                    'deletable' => true,
+                    'system_field' => false,
+                    'max_guests' => 10,
+                    'order' => 4,
+                    'unique' => true,
+                    'colSpan' => 12
+                ]
+            ],
+            'settings' => [
+                'layout' => [
+                    'settings' => [
+                        'submit_button_text' => 'Submit',
+                        'show_progress_bar' => false,
+                        'show_field_labels' => true,
+                        'show_required_indicator' => true
+                    ]
+                ],
+                'confirmations' => [
+                    'message' => 'Thank you for your submission!',
+                    'redirectUrl' => null
+                ]
+            ],
+            'is_active' => true,
+            'allow_multiple_submissions' => true,
+            'requires_authentication' => false,
+            'is_default' => true // Flag to indicate this is the default form
+        ];
+    }
+
+
+    #[Route('/public/events/{event_id}/form/submit', name: 'public_event_form_submit', methods: ['POST'], requirements: ['event_id' => '\d+'])]
+    public function submitEventForm(int $event_id, Request $request): JsonResponse
+    {
+        $data = $request->attributes->get('data');
+
+        try {
+            // Get event by ID
+            $event = $this->eventService->getOne($event_id);
+            
+            if (!$event || $event->isDeleted()) {
+                return $this->responseService->json(false, 'Event not found', null, 404);
+            }
+            
+            // Try to get custom form attached to event
+            $form = $this->formService->getFormForEvent($event);
+            
+            // If no custom form, we'll process the default form submission
+            if (!$form) {
+                // Create a virtual form entity for the submission service
+                // In a real implementation, you might want to have a special "default form" entry in the database
+                // For now, we'll process the submission without a form entity
+                
+                // Add metadata
+                $data['event_id'] = $event->getId();
+                $data['ip_address'] = $request->getClientIp();
+                $data['user_agent'] = $request->headers->get('User-Agent');
+                $data['submission_source'] = 'web';
+                $data['is_default_form'] = true;
+                
+                // Process the submission (you may need to update the submission service to handle this case)
+                $submission = $this->submissionService->createForEvent($data, $event);
+                
+                return $this->responseService->json(true, 'Form submitted successfully.', [
+                    'submission_id' => $submission->getId()
+                ], 201);
+            }
+            
+            // Custom form exists, process normally
+            if ($form->isDeleted() || !$form->isActive()) {
+                return $this->responseService->json(false, 'Form is not available', null, 404);
+            }
+            
+            // Add metadata
+            $data['form_id'] = $form->getId();
+            $data['event_id'] = $event->getId();
+            $data['ip_address'] = $request->getClientIp();
+            $data['user_agent'] = $request->headers->get('User-Agent');
+            $data['submission_source'] = 'web';
+
+            $submission = $this->submissionService->create($data);
+
+            return $this->responseService->json(true, 'Form submitted successfully.', [
+                'submission_id' => $submission->getId()
+            ], 201);
+            
+        } catch (FormsException $e) {
+            return $this->responseService->json(false, $e->getMessage(), null, 400);
+        } catch (\Exception $e) {
+            return $this->responseService->json(false, $e, null, 500);
+        }
+    }
 
 }

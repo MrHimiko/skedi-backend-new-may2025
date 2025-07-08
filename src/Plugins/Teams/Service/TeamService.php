@@ -6,41 +6,36 @@ use App\Service\CrudManager;
 use App\Exception\CrudException;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\Validator\Constraints as Assert;
-use App\Service\SlugService;
 
-use App\Plugins\Teams\Exception\TeamsException;
-use App\Plugins\Organizations\Entity\OrganizationEntity;
 use App\Plugins\Teams\Entity\TeamEntity;
-
+use App\Plugins\Organizations\Entity\OrganizationEntity;
+use App\Plugins\Teams\Exception\TeamsException;
+use App\Service\SlugService;
+use App\Plugins\Events\Service\EventService;
 
 class TeamService
 {
     private CrudManager $crudManager;
     private EntityManagerInterface $entityManager;
     private SlugService $slugService;
+    private EventService $eventService;
 
     public function __construct(
         CrudManager $crudManager,
         EntityManagerInterface $entityManager,
-        SlugService $slugService
+        SlugService $slugService,
+        EventService $eventService
     ) {
-        $this->crudManager     = $crudManager;
-        $this->entityManager   = $entityManager;
-        $this->slugService     = $slugService;
+        $this->crudManager = $crudManager;
+        $this->entityManager = $entityManager;
+        $this->slugService = $slugService;
+        $this->eventService = $eventService;
     }
 
-    public function getMany(array $filters, int $page, int $limit, array $criteria = []): array
+    public function getMany(array $filters, int $page, int $limit, array $criteria = [], ?callable $callback = null): array
     {
         try {
-            return $this->crudManager->findMany(
-                TeamEntity::class,
-                $filters,
-                $page,
-                $limit,
-                $criteria + [
-                    'deleted' => false
-                ]
-            );
+            return $this->crudManager->findMany(TeamEntity::class, $filters, $page, $limit, $criteria, $callback);
         } catch (CrudException $e) {
             throw new TeamsException($e->getMessage());
         }
@@ -48,30 +43,25 @@ class TeamService
 
     public function getOne(int $id, array $criteria = []): ?TeamEntity
     {
-        return $this->crudManager->findOne(TeamEntity::class, $id, $criteria + ['deleted' => false]);
+        return $this->crudManager->findOne(TeamEntity::class, $id, $criteria);
     }
 
-
-    public function create(array $data = [], ?callable $callback = null): TeamEntity
+    public function create(array $data, ?callable $callback = null): TeamEntity
     {
-        try 
-        {
-            $team = new TeamEntity();
+        $team = new TeamEntity();
 
-            if ($callback) 
-            {
-                $callback($team);
-            }
+        if($callback) {
+            $callback($team);
+        }
 
-            if(!array_key_exists('slug', $data))
-            {
+        try {
+            if(!isset($data['slug']) || !$data['slug']) {
                 $data['slug'] = $data['name'] ?? null;
             }
 
             $data['slug'] = $this->slugService->generateSlug($data['slug']);
 
-            if($this->getBySlug($data['slug']))
-            {
+            if($this->getBySlug($data['slug'])) {
                 throw new TeamsException('Team slug already exist.');
             }
 
@@ -84,26 +74,17 @@ class TeamService
                     new Assert\Type('scalar'),
                     new Assert\Length(['min' => 2, 'max' => 255]),
                 ],
-                'parent_team_id' => new Assert\Optional([
-                    new Assert\Type('numeric')
-                ]),
                 'color' => new Assert\Optional([
                     new Assert\Type('scalar'),
-                    new Assert\Length(['min' => 2, 'max' => 30]),
+                    new Assert\Length(['min' => 4, 'max' => 50]),
                 ])
-                
             ];
 
-            $this->crudManager->create($team, array_intersect_key($data, array_flip(['name', 'slug', 'parent_team_id', 'color'])), $contraints);
-
-            $this->update($team, $data);
+            $this->crudManager->create($team, array_intersect_key($data, array_flip(['name', 'slug', 'color'])), $contraints);
 
             return $team;
         } 
-        catch (CrudException $e) 
-        {
-            $this->delete($team, true);
-
+        catch (CrudException $e) {
             throw new TeamsException($e->getMessage());
         }
     }
@@ -120,103 +101,109 @@ class TeamService
                 new Assert\Type('scalar'),
                 new Assert\Length(['min' => 2, 'max' => 255]),
             ]),
-            'parent_team_id' => new Assert\Optional([
-                new Assert\Type('numeric'),
-            ]),
             'color' => new Assert\Optional([
                 new Assert\Type('scalar'),
-                new Assert\Length(['min' => 2, 'max' => 30]),
+                new Assert\Length(['min' => 4, 'max' => 50]),
             ])
         ];
 
         $transform = [
-            'slug' => function(string $value) use($team)
-            {
+            'slug' => function(string $value) use($team) {
                 $value = $this->slugService->generateSlug($value);
 
-                if($this->getBySlug($value) && $team->getSlug() !== $value)
-                {
+                if($this->getBySlug($value) && $team->getSlug() !== $value) {
                     throw new TeamsException('Slug already exist.');
                 }
 
                 return $value;
-            },
-            'parent_team_id' => function($value) use($team)
-            {
-                if ($value) {
-                    $parentTeam = $this->getOne($value);
-                    if (!$parentTeam) {
-                        throw new TeamsException('Parent team not found.');
-                    }
-                    
-                    // Check for circular reference
-                    if ($parentTeam->getId() === $team->getId()) {
-                        throw new TeamsException('A team cannot be its own parent.');
-                    }
-                    
-                    // Ensure parent team belongs to the same organization
-                    if ($parentTeam->getOrganization()->getId() !== $team->getOrganization()->getId()) {
-                        throw new TeamsException('Parent team must belong to the same organization.');
-                    }
-                    
-                    return $parentTeam;
-                }
-                return null;
             }
         ];
 
-        try 
-        {
+        try {
+            // Handle parent team update
+            if(isset($data['parent_team_id'])) {
+                if($data['parent_team_id']) {
+                    $parentTeam = $this->getOne($data['parent_team_id']);
+                    if($parentTeam) {
+                        $team->setParentTeam($parentTeam);
+                    }
+                } else {
+                    $team->setParentTeam(null);
+                }
+                unset($data['parent_team_id']);
+            }
+
             $this->crudManager->update($team, $data, $contraints, $transform);
         } 
-        catch (CrudException $e) 
-        {
+        catch (CrudException $e) {
             throw new TeamsException($e->getMessage());
         }
     }
 
+    /**
+     * Delete team with cascade soft delete of child teams and events
+     */
     public function delete(TeamEntity $team, bool $hard = false): void
     {
         try {
-            // Check if team has child teams before deleting
-            if (!$hard && $this->hasChildTeams($team)) {
-                throw new TeamsException('Cannot delete a team that has child teams. Please delete or reassign child teams first.');
+            if (!$hard) {
+                // Get all child teams recursively
+                $childTeams = $this->getAllChildTeams($team);
+                
+                // Delete all child teams
+                foreach ($childTeams as $childTeam) {
+                    $this->crudManager->delete($childTeam, false);
+                }
+                
+                // Delete all events for this team and child teams
+                $allTeams = array_merge([$team], $childTeams);
+                foreach ($allTeams as $currentTeam) {
+                    $events = $this->eventService->getEventsByTeam($currentTeam);
+                    foreach ($events as $event) {
+                        $this->eventService->delete($event, false);
+                    }
+                }
             }
             
+            // Delete the team itself
             $this->crudManager->delete($team, $hard);
         } catch (CrudException $e) {
             throw new TeamsException($e->getMessage());
         }
     }
 
-    private function getBySlug(string $slug)
+    /**
+     * Get all child teams recursively
+     */
+    private function getAllChildTeams(TeamEntity $parentTeam): array
+    {
+        $allChildren = [];
+        
+        // Get direct children
+        $directChildren = $this->getMany([], 1, 1000, [
+            'parentTeam' => $parentTeam,
+            'deleted' => false
+        ]);
+        
+        foreach ($directChildren as $child) {
+            $allChildren[] = $child;
+            // Recursively get children of this child
+            $grandChildren = $this->getAllChildTeams($child);
+            $allChildren = array_merge($allChildren, $grandChildren);
+        }
+        
+        return $allChildren;
+    }
+
+    public function getBySlug(string $slug)
     {
         $teams = $this->getMany([], 1, 1, ['slug' => $slug, 'deleted' => false]);
-
         return count($teams) ? $teams[0] : null;
     }
 
-
-    
-    public function getChildTeams(int $teamId): array
+    public function getTeamsByOrganization(OrganizationEntity $organization): array
     {
-        $parentTeam = $this->getOne($teamId);
-        
-        if (!$parentTeam) {
-            return [];
-        }
-        
-        try {
-            return $this->getMany([], 1, 1000, ['parentTeam' => $parentTeam]);
-        } catch (CrudException $e) {
-            throw new TeamsException($e->getMessage());
-        }
-    }
-    
-
-    public function getTeamsByOrganization($organization): array
-    {
-        $organizationEntity = is_object($organization) && property_exists($organization, 'entity') 
+        $organizationEntity = is_object($organization->entity) 
             ? $organization->entity 
             : $organization;
         
@@ -227,7 +214,6 @@ class TeamService
         }
     }
 
-
     public function getTeamByIdAndOrganization(int $id, OrganizationEntity $organization): ?TeamEntity
     {
         return $this->getOne($id, ['organization' => $organization]);
@@ -235,9 +221,7 @@ class TeamService
 
     public function hasChildTeams(TeamEntity $team): bool
     {
-        $children = $this->getMany([], 1, 1, ['parentTeam' => $team]);
+        $children = $this->getMany([], 1, 1, ['parentTeam' => $team, 'deleted' => false]);
         return count($children) > 0;
     }
-
-    
 }

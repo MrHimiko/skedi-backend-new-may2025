@@ -221,50 +221,282 @@ class ContactService
         return $orgContact;
     }
 
-    public function getContactsWithMeetingInfo(OrganizationEntity $organization, array $filters, int $page, int $limit): array
+
+    /**
+     * Get contacts for a specific host with optional organization filter
+     * This will fetch from host_contacts table
+     */
+    public function getHostContacts(UserEntity $host, array $filters, int $page, int $limit, ?OrganizationEntity $organization = null): array
     {
         try {
-            // Get organization contacts using CrudManager
-            $orgContacts = $this->getMany($organization, $filters, $page, $limit);
+            // Build criteria for host contacts
+            $criteria = [
+                'host' => $host,
+                'deleted' => false
+            ];
             
-            // Filter by search if provided
+            // Add organization filter if provided
+            if ($organization) {
+                $criteria['organization'] = $organization;
+            }
+            
+            // Get host contacts
+            $hostContacts = $this->crudManager->findMany(
+                HostContactEntity::class,
+                [], // No filters here since we can't filter on related entities with CrudManager
+                $page,
+                $limit,
+                $criteria
+            );
+            
+            // If search is provided, we need to filter results manually
+            // since CrudManager doesn't support filtering on related entities
+            if (!empty($filters['search'])) {
+                $searchTerm = strtolower($filters['search']);
+                $hostContacts = array_filter($hostContacts, function($hostContact) use ($searchTerm) {
+                    $contact = $hostContact->getContact();
+                    $name = strtolower($contact->getName() ?? '');
+                    $email = strtolower($contact->getEmail() ?? '');
+                    $phone = strtolower($contact->getPhone() ?? '');
+                    
+                    return strpos($name, $searchTerm) !== false ||
+                           strpos($email, $searchTerm) !== false ||
+                           strpos($phone, $searchTerm) !== false;
+                });
+            }
+            
+            // Transform the results to include contact data
+            $data = array_map(function($hostContact) {
+                return $this->transformHostContactToArray($hostContact);
+            }, $hostContacts);
+            
+            // Get total count (without pagination)
+            $allHostContacts = $this->crudManager->findMany(
+                HostContactEntity::class,
+                [],
+                1,
+                10000, // Large limit to get all
+                $criteria
+            );
+            
+            // Apply search filter to count if needed
+            if (!empty($filters['search'])) {
+                $searchTerm = strtolower($filters['search']);
+                $allHostContacts = array_filter($allHostContacts, function($hostContact) use ($searchTerm) {
+                    $contact = $hostContact->getContact();
+                    $name = strtolower($contact->getName() ?? '');
+                    $email = strtolower($contact->getEmail() ?? '');
+                    $phone = strtolower($contact->getPhone() ?? '');
+                    
+                    return strpos($name, $searchTerm) !== false ||
+                           strpos($email, $searchTerm) !== false ||
+                           strpos($phone, $searchTerm) !== false;
+                });
+            }
+            
+            return [
+                'data' => array_values($data),
+                'count' => count($allHostContacts),
+                'page' => $page,
+                'limit' => $limit
+            ];
+            
+        } catch (CrudException $e) {
+            throw new ContactsException($e->getMessage());
+        }
+    }
+
+    public function getContactsWithMeetingInfo(OrganizationEntity $organization, array $filters, int $page, int $limit, ?UserEntity $host = null, bool $isAdmin = false): array
+    {
+        try {
+            $criteria = [
+                'organization' => $organization,
+                'deleted' => false
+            ];
+            
+            // Get organization contacts
+            $orgContacts = $this->crudManager->findMany(
+                OrganizationContactEntity::class,
+                [],
+                $page,
+                $limit,
+                $criteria
+            );
+            
+            // If not admin and host is specified, filter to only show contacts that have host relationship
+            if (!$isAdmin && $host) {
+                $orgContacts = array_filter($orgContacts, function($orgContact) use ($host, $organization) {
+                    $contact = $orgContact->getContact();
+                    
+                    // Check if host contact exists
+                    $hostContact = $this->entityManager->getRepository(HostContactEntity::class)
+                        ->findOneBy([
+                            'contact' => $contact,
+                            'host' => $host,
+                            'organization' => $organization,
+                            'deleted' => false
+                        ]);
+                    
+                    return $hostContact !== null;
+                });
+            }
+            
+            // Apply search filter if provided
             if (!empty($filters['search'])) {
                 $searchTerm = strtolower($filters['search']);
                 $orgContacts = array_filter($orgContacts, function($orgContact) use ($searchTerm) {
                     $contact = $orgContact->getContact();
                     $name = strtolower($contact->getName() ?? '');
-                    $email = strtolower($contact->getEmail());
+                    $email = strtolower($contact->getEmail() ?? '');
+                    $phone = strtolower($contact->getPhone() ?? '');
                     
-                    return strpos($name, $searchTerm) !== false || strpos($email, $searchTerm) !== false;
+                    return strpos($name, $searchTerm) !== false ||
+                           strpos($email, $searchTerm) !== false ||
+                           strpos($phone, $searchTerm) !== false;
                 });
-                $orgContacts = array_values($orgContacts); // Reset array keys
             }
             
-            // Process contacts to add meeting info
-            $contactsData = [];
+            // Transform results and add meeting info
+            $data = [];
             foreach ($orgContacts as $orgContact) {
                 $contact = $orgContact->getContact();
-                
-                // Get meeting info
                 $lastMeeting = $this->getLastMeetingForContact($contact, $organization);
-                $nextMeeting = $this->getNextMeetingForContact($contact, $organization);
                 
-                $contactsData[] = [
-                    'id' => $orgContact->getId(),
-                    'contact' => $contact->toArray(),
-                    'organization_contact' => $orgContact->toArray(),
-                    'last_meeting' => $lastMeeting,
-                    'next_meeting' => $nextMeeting,
-                ];
+                $contactData = $orgContact->toArray();
+                $contactData['last_meeting'] = $lastMeeting;
+                
+                // If host is specified, add host-specific info
+                if ($host) {
+                    $hostContact = $this->entityManager->getRepository(HostContactEntity::class)
+                        ->findOneBy([
+                            'contact' => $contact,
+                            'host' => $host,
+                            'organization' => $organization,
+                            'deleted' => false
+                        ]);
+                    
+                    if ($hostContact) {
+                        $contactData['host_info'] = [
+                            'meeting_count' => $hostContact->getMeetingCount(),
+                            'first_meeting' => $hostContact->getFirstMeeting() ? 
+                                $hostContact->getFirstMeeting()->format('Y-m-d H:i:s') : null,
+                            'last_meeting' => $hostContact->getLastMeeting() ? 
+                                $hostContact->getLastMeeting()->format('Y-m-d H:i:s') : null,
+                            'notes' => $hostContact->getNotes(),
+                            'is_favorite' => $hostContact->getIsFavorite()
+                        ];
+                    }
+                }
+                
+                $data[] = $contactData;
             }
-
+            
+            // Get total count
+            $allOrgContacts = $this->crudManager->findMany(
+                OrganizationContactEntity::class,
+                [],
+                1,
+                10000,
+                $criteria
+            );
+            
+            // Apply same filters for count
+            if (!$isAdmin && $host) {
+                $allOrgContacts = array_filter($allOrgContacts, function($orgContact) use ($host, $organization) {
+                    $contact = $orgContact->getContact();
+                    $hostContact = $this->entityManager->getRepository(HostContactEntity::class)
+                        ->findOneBy([
+                            'contact' => $contact,
+                            'host' => $host,
+                            'organization' => $organization,
+                            'deleted' => false
+                        ]);
+                    return $hostContact !== null;
+                });
+            }
+            
+            if (!empty($filters['search'])) {
+                $searchTerm = strtolower($filters['search']);
+                $allOrgContacts = array_filter($allOrgContacts, function($orgContact) use ($searchTerm) {
+                    $contact = $orgContact->getContact();
+                    $name = strtolower($contact->getName() ?? '');
+                    $email = strtolower($contact->getEmail() ?? '');
+                    $phone = strtolower($contact->getPhone() ?? '');
+                    
+                    return strpos($name, $searchTerm) !== false ||
+                           strpos($email, $searchTerm) !== false ||
+                           strpos($phone, $searchTerm) !== false;
+                });
+            }
+            
             return [
-                'data' => $contactsData,
-                'count' => count($contactsData)
+                'data' => array_values($data),
+                'count' => count($allOrgContacts),
+                'page' => $page,
+                'limit' => $limit
             ];
-        } catch (\Exception $e) {
-            throw new ContactsException('Failed to get contacts: ' . $e->getMessage());
+            
+        } catch (CrudException $e) {
+            throw new ContactsException($e->getMessage());
         }
+    }
+
+
+    /**
+     * Transform host contact entity to array
+     */
+    private function transformHostContactToArray(HostContactEntity $hostContact): array
+    {
+        $contact = $hostContact->getContact();
+        $organization = $hostContact->getOrganization();
+        
+        return [
+            'id' => $hostContact->getId(),
+            'contact' => [
+                'id' => $contact->getId(),
+                'name' => $contact->getName(),
+                'email' => $contact->getEmail(),
+                'phone' => $contact->getPhone(),
+                'created_at' => $contact->getCreatedAt()->format('Y-m-d H:i:s')
+            ],
+            'organization' => [
+                'id' => $organization->getId(),
+                'name' => $organization->getName()
+            ],
+            'host_info' => [
+                'meeting_count' => $hostContact->getMeetingCount(),
+                'first_meeting' => $hostContact->getFirstMeeting() ? 
+                    $hostContact->getFirstMeeting()->format('Y-m-d H:i:s') : null,
+                'last_meeting' => $hostContact->getLastMeeting() ? 
+                    $hostContact->getLastMeeting()->format('Y-m-d H:i:s') : null,
+                'notes' => $hostContact->getNotes(),
+                'is_favorite' => $hostContact->getIsFavorite()
+            ],
+            'created_at' => $hostContact->getCreated()->format('Y-m-d H:i:s')
+        ];
+    }
+
+    /**
+     * Toggle favorite status for host contact
+     */
+    public function toggleHostContactFavorite(UserEntity $host, ContactEntity $contact, OrganizationEntity $organization): bool
+    {
+        $hostContact = $this->entityManager->getRepository(HostContactEntity::class)
+            ->findOneBy([
+                'contact' => $contact,
+                'host' => $host,
+                'organization' => $organization,
+                'deleted' => false
+            ]);
+        
+        if (!$hostContact) {
+            throw new ContactsException('Host contact relationship not found');
+        }
+        
+        $hostContact->setIsFavorite(!$hostContact->getIsFavorite());
+        $this->entityManager->flush();
+        
+        return $hostContact->getIsFavorite();
     }
 
 

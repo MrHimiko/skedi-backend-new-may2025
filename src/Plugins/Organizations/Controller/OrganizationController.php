@@ -50,7 +50,7 @@ class OrganizationController extends AbstractController
         } 
         catch (\Exception $e) 
         {
-            return $this->responseService->json(false, $e, null, 500);
+            return $this->responseService->json(false, $e->getMessage(), null, 500);
         }
     }
 
@@ -68,10 +68,13 @@ class OrganizationController extends AbstractController
 
             return $this->responseService->json(true, 'Organization retrieved successfully.', $organization->entity->toArray());
         } 
-        catch (OrganizationsException $e) {
+        catch (OrganizationsException $e) 
+        {
             return $this->responseService->json(false, $e->getMessage(), null, 400);
-        } catch (\Exception $e) {
-            return $this->responseService->json(false, $e, null, 500);
+        } 
+        catch (\Exception $e) 
+        {
+            return $this->responseService->json(false, $e->getMessage(), null, 500);
         }
     }
 
@@ -110,7 +113,7 @@ class OrganizationController extends AbstractController
         } 
         catch (\Exception $e) 
         {
-            return $this->responseService->json(false, $e, null, 500);
+            return $this->responseService->json(false, $e->getMessage(), null, 500);
         }
     }
 
@@ -135,10 +138,14 @@ class OrganizationController extends AbstractController
             $this->organizationService->update($organization->entity, $data);
 
             return $this->responseService->json(true, 'Organization updated successfully.', $organization->entity->toArray());
-        } catch (OrganizationsException $e) {
+        } 
+        catch (OrganizationsException $e) 
+        {
             return $this->responseService->json(false, $e->getMessage(), null, 400);
-        } catch (\Exception $e) {
-            return $this->responseService->json(false, $e, null, 500);
+        } 
+        catch (\Exception $e) 
+        {
+            return $this->responseService->json(false, $e->getMessage(), null, 500);
         }
     }
 
@@ -156,16 +163,21 @@ class OrganizationController extends AbstractController
 
             if($organization->role !== 'admin')
             {
-                return $this->responseService->json(false, 'Organization was not found.');
+                return $this->responseService->json(false, 'You do not have permission to delete this organization.');
             }
 
+            // Simple soft delete - just mark the organization as deleted
             $this->organizationService->delete($organization->entity);
 
-            return $this->responseService->json(true, 'Organization soft-deleted successfully.', $organization->entity->toArray());
-        } catch (OrganizationsException $e) {
+            return $this->responseService->json(true, 'Organization deleted successfully.');
+        } 
+        catch (OrganizationsException $e) 
+        {
             return $this->responseService->json(false, $e->getMessage(), null, 400);
-        } catch (\Exception $e) {
-            return $this->responseService->json(false, 'Unexpected error occurred.', null, 500);
+        } 
+        catch (\Exception $e) 
+        {
+            return $this->responseService->json(false, 'An error occurred while deleting the organization.', null, 500);
         }
     }
 }

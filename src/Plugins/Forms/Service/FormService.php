@@ -10,7 +10,6 @@ use Symfony\Component\Validator\Constraints as Assert;
 use App\Plugins\Forms\Entity\FormEntity;
 use App\Plugins\Forms\Entity\EventFormEntity;
 use App\Plugins\Forms\Exception\FormsException;
-use App\Plugins\Organizations\Entity\OrganizationEntity;
 use App\Plugins\Account\Entity\UserEntity;
 use App\Plugins\Events\Entity\EventEntity;
 use App\Service\SlugService;
@@ -34,6 +33,7 @@ class FormService
     public function getMany(array $filters, int $page, int $limit, array $criteria = []): array
     {
         try {
+            // Remove organization from criteria - forms are now global
             return $this->crudManager->findMany(
                 FormEntity::class,
                 $filters,
@@ -51,21 +51,20 @@ class FormService
         return $this->crudManager->findOne(FormEntity::class, $id, $criteria + ['deleted' => false]);
     }
 
-    public function getBySlug(string $slug, OrganizationEntity $organization): ?FormEntity
+    public function getBySlug(string $slug): ?FormEntity
     {
         return $this->crudManager->findOne(FormEntity::class, null, [
             'slug' => $slug,
-            'organization' => $organization,
             'deleted' => false
         ]);
     }
 
-    public function create(array $data, OrganizationEntity $organization, UserEntity $user): FormEntity
+    public function create(array $data, UserEntity $user): FormEntity
     {
         try {
             $form = new FormEntity();
-            $form->setOrganization($organization);
             $form->setCreatedBy($user);
+            // Don't set organization - it's now nullable
 
             // Generate slug if not provided
             if (!array_key_exists('slug', $data)) {
@@ -88,48 +87,40 @@ class FormService
             $constraints = [
                 'name' => [
                     new Assert\NotBlank(['message' => 'Form name is required.']),
-                    new Assert\Type('string'),
-                    new Assert\Length(['min' => 2, 'max' => 255]),
+                    new Assert\Length(['max' => 255])
                 ],
                 'slug' => [
                     new Assert\NotBlank(['message' => 'Form slug is required.']),
-                    new Assert\Type('string'),
-                    new Assert\Length(['min' => 2, 'max' => 255]),
-                    new Assert\Regex([
-                        'pattern' => '/^[a-z0-9\-]+$/',
-                        'message' => 'Slug can only contain lowercase letters, numbers, and hyphens.'
-                    ]),
+                    new Assert\Length(['max' => 255])
                 ],
-                'description' => new Assert\Optional([
-                    new Assert\Type('string'),
-                ]),
-                'fields' => new Assert\Optional([
-                    new Assert\Type('array'),
-                ]),
-                'settings' => new Assert\Optional([
-                    new Assert\Type('array'),
-                ]),
-                'is_active' => new Assert\Optional([
-                    new Assert\Type('bool'),
-                ]),
-                'allow_multiple_submissions' => new Assert\Optional([
-                    new Assert\Type('bool'),
-                ]),
-                'requires_authentication' => new Assert\Optional([
-                    new Assert\Type('bool'),
-                ]),
+                'description' => [
+                    new Assert\Length(['max' => 65535])
+                ],
+                'fields' => [
+                    new Assert\NotBlank(['message' => 'Form fields are required.']),
+                    new Assert\Type('array')
+                ],
+                'settings' => [
+                    new Assert\Type('array')
+                ],
+                'is_active' => [
+                    new Assert\Type('bool')
+                ],
+                'allow_multiple_submissions' => [
+                    new Assert\Type('bool')
+                ],
+                'requires_authentication' => [
+                    new Assert\Type('bool')
+                ]
             ];
 
             $transform = [
-                'slug' => function(string $value) {
-                    return $this->slugService->generateSlug($value);
-                },
-                'fields' => function($value) use ($form) {
+                'fields' => function($value) use (&$form) {
                     $fieldsArray = is_array($value) ? $value : [];
                     $form->setFieldsJson($fieldsArray);
-                    return $form->getFieldsJson(); // This now ensures system fields
+                    return $fieldsArray;
                 },
-                'settings' => function($value) use ($form) {
+                'settings' => function($value) use (&$form) {
                     $settingsArray = is_array($value) ? $value : [];
                     $form->setSettingsJson($settingsArray);
                     return $settingsArray;
@@ -137,7 +128,7 @@ class FormService
             ];
 
             $this->crudManager->create($form, $data, $constraints, $transform);
-            
+
             return $form;
         } catch (CrudException $e) {
             throw new FormsException($e->getMessage());
@@ -147,65 +138,40 @@ class FormService
     public function update(FormEntity $form, array $data): void
     {
         try {
-            // Handle slug updates
-            if (!empty($data['slug']) || (!isset($data['slug']) && !empty($data['name']))) {
-                if (empty($data['slug']) && !empty($data['name'])) {
-                    $data['slug'] = $data['name'];
-                }
-                $data['slug'] = $this->slugService->generateSlug($data['slug']);
-            }
-            
-            // Validate fields to ensure system fields aren't removed
-            if (isset($data['fields'])) {
-                $form->setFieldsJson($data['fields']);
-                $data['fields'] = $form->getFieldsJson();
-            }
-
             $constraints = [
-                'name' => new Assert\Optional([
-                    new Assert\NotBlank(['message' => 'Form name is required.']),
-                    new Assert\Type('string'),
-                    new Assert\Length(['min' => 2, 'max' => 255]),
-                ]),
-                'slug' => new Assert\Optional([
-                    new Assert\NotBlank(['message' => 'Form slug is required.']),
-                    new Assert\Type('string'),
-                    new Assert\Length(['min' => 2, 'max' => 255]),
-                    new Assert\Regex([
-                        'pattern' => '/^[a-z0-9\-]+$/',
-                        'message' => 'Slug can only contain lowercase letters, numbers, and hyphens.'
-                    ]),
-                ]),
-                'description' => new Assert\Optional([
-                    new Assert\Type('string'),
-                ]),
-                'fields' => new Assert\Optional([
-                    new Assert\Type('array'),
-                ]),
-                'settings' => new Assert\Optional([
-                    new Assert\Type('array'),
-                ]),
-                'is_active' => new Assert\Optional([
-                    new Assert\Type('bool'),
-                ]),
-                'allow_multiple_submissions' => new Assert\Optional([
-                    new Assert\Type('bool'),
-                ]),
-                'requires_authentication' => new Assert\Optional([
-                    new Assert\Type('bool'),
-                ]),
+                'name' => [
+                    new Assert\Length(['max' => 255])
+                ],
+                'slug' => [
+                    new Assert\Length(['max' => 255])
+                ],
+                'description' => [
+                    new Assert\Length(['max' => 65535])
+                ],
+                'fields' => [
+                    new Assert\Type('array')
+                ],
+                'settings' => [
+                    new Assert\Type('array')
+                ],
+                'is_active' => [
+                    new Assert\Type('bool')
+                ],
+                'allow_multiple_submissions' => [
+                    new Assert\Type('bool')
+                ],
+                'requires_authentication' => [
+                    new Assert\Type('bool')
+                ]
             ];
 
             $transform = [
-                'slug' => function(string $value) {
-                    return $this->slugService->generateSlug($value);
-                },
-                'fields' => function($value) use ($form) {
+                'fields' => function($value) use (&$form) {
                     $fieldsArray = is_array($value) ? $value : [];
                     $form->setFieldsJson($fieldsArray);
                     return $fieldsArray;
                 },
-                'settings' => function($value) use ($form) {
+                'settings' => function($value) use (&$form) {
                     $settingsArray = is_array($value) ? $value : [];
                     $form->setSettingsJson($settingsArray);
                     return $settingsArray;
@@ -269,7 +235,25 @@ class FormService
         }
     }
 
-    // Also fix the getFormForEvent method while we're at it:
+    public function detachFromEvent(EventEntity $event): void
+    {
+        try {
+            $eventFormRepository = $this->entityManager->getRepository(EventFormEntity::class);
+            
+            $eventForm = $eventFormRepository->findOneBy([
+                'event' => $event,
+                'isActive' => true
+            ]);
+
+            if ($eventForm) {
+                $eventForm->setIsActive(false);
+                $this->entityManager->flush();
+            }
+        } catch (\Exception $e) {
+            throw new FormsException($e->getMessage());
+        }
+    }
+
     public function getFormForEvent(EventEntity $event): ?FormEntity
     {
         try {
@@ -282,25 +266,7 @@ class FormService
             
             return $eventForm ? $eventForm->getForm() : null;
         } catch (\Exception $e) {
-            return null;
-        }
-    }
-
-    public function detachFromEvent(EventEntity $event): void
-    {
-        try {
-            $eventForm = $this->crudManager->findOne(EventFormEntity::class, null, [
-                'event' => $event
-            ]);
-
-            if ($eventForm) {
-                $this->entityManager->remove($eventForm);
-                $this->entityManager->flush();
-            }
-        } catch (\Exception $e) {
             throw new FormsException($e->getMessage());
         }
     }
-
-
 }

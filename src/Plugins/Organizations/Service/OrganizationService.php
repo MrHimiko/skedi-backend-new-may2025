@@ -6,40 +6,39 @@ use App\Service\CrudManager;
 use App\Exception\CrudException;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\Validator\Constraints as Assert;
-use App\Service\SlugService; // <-- Import the SlugService
 
 use App\Plugins\Organizations\Entity\OrganizationEntity;
 use App\Plugins\Organizations\Exception\OrganizationsException;
+use App\Service\SlugService;
+use App\Plugins\Teams\Service\TeamService;
+use App\Plugins\Events\Service\EventService;
 
 class OrganizationService
 {
     private CrudManager $crudManager;
     private EntityManagerInterface $entityManager;
     private SlugService $slugService;
+    private TeamService $teamService;
+    private EventService $eventService;
 
     public function __construct(
         CrudManager $crudManager,
         EntityManagerInterface $entityManager,
-        SlugService $slugService
+        SlugService $slugService,
+        TeamService $teamService,
+        EventService $eventService
     ) {
-        $this->crudManager     = $crudManager;
-        $this->entityManager   = $entityManager;
-        $this->slugService     = $slugService;
+        $this->crudManager = $crudManager;
+        $this->entityManager = $entityManager;
+        $this->slugService = $slugService;
+        $this->teamService = $teamService;
+        $this->eventService = $eventService;
     }
 
-
-    public function getMany(array $filters, int $page, int $limit, array $criteria = []): array
+    public function getMany(array $filters, int $page, int $limit, array $criteria = [], ?callable $callback = null): array
     {
         try {
-            return $this->crudManager->findMany(
-                OrganizationEntity::class,
-                $filters,
-                $page,
-                $limit,
-                $criteria + [
-                    'deleted' => false
-                ]
-            );
+            return $this->crudManager->findMany(OrganizationEntity::class, $filters, $page, $limit, $criteria, $callback);
         } catch (CrudException $e) {
             throw new OrganizationsException($e->getMessage());
         }
@@ -47,29 +46,23 @@ class OrganizationService
 
     public function getOne(int $id, array $criteria = []): ?OrganizationEntity
     {
-        return $this->crudManager->findOne(OrganizationEntity::class, $id, $criteria + ['deleted' => false]);
+        return $this->crudManager->findOne(OrganizationEntity::class, $id, $criteria);
     }
 
-    public function create(array $data = [], ?callable $callback = null): OrganizationEntity
+    public function create(array $data): OrganizationEntity
     {
-        try 
-        {
-            $organization = new OrganizationEntity();
+        $organization = new OrganizationEntity();
 
-            if ($callback) 
-            {
-                $callback($organization);
-            }
+        try {
+            $data['slug'] = $data['slug'] ?? $data['name'] ?? null;
 
-            if(!array_key_exists('slug', $data))
-            {
+            if(!$data['slug']) {
                 $data['slug'] = $data['name'] ?? null;
             }
 
             $data['slug'] = $this->slugService->generateSlug($data['slug']);
 
-            if($this->getBySlug($data['slug']))
-            {
+            if($this->getBySlug($data['slug'])) {
                 throw new OrganizationsException('Organization slug already exist.');
             }
 
@@ -90,10 +83,8 @@ class OrganizationService
 
             return $organization;
         } 
-        catch (CrudException $e) 
-        {
+        catch (CrudException $e) {
             $this->delete($organization, true);
-
             throw new OrganizationsException($e->getMessage());
         }
     }
@@ -113,12 +104,10 @@ class OrganizationService
         ];
 
         $transform = [
-            'slug' => function(string $value) use($organization)
-            {
+            'slug' => function(string $value) use($organization) {
                 $value = $this->slugService->generateSlug($value);
 
-                if($this->getBySlug($value) && $organization->getSlug() !== $value)
-                {
+                if($this->getBySlug($value) && $organization->getSlug() !== $value) {
                     throw new OrganizationsException('Slug already exist.');
                 }
 
@@ -126,19 +115,38 @@ class OrganizationService
             }
         ];
 
-        try 
-        {
+        try {
             $this->crudManager->update($organization, $data, $contraints, $transform);
         } 
-        catch (CrudException $e) 
-        {
+        catch (CrudException $e) {
             throw new OrganizationsException($e->getMessage());
         }
     }
 
+    /**
+     * Delete organization with cascade soft delete
+     */
     public function delete(OrganizationEntity $organization, bool $hard = false): void
     {
         try {
+            if (!$hard) {
+                // Cascade soft delete all teams in this organization
+                $teams = $this->teamService->getTeamsByOrganization($organization);
+                foreach ($teams as $team) {
+                    $this->teamService->delete($team, false);
+                }
+                
+                // Soft delete all events directly in this organization
+                $events = $this->eventService->getEventsByOrganization($organization);
+                foreach ($events as $event) {
+                    // Only delete events that don't have a team (org-level events)
+                    if ($event->getTeam() === null) {
+                        $this->eventService->delete($event, false);
+                    }
+                }
+            }
+            
+            // Delete the organization itself
             $this->crudManager->delete($organization, $hard);
         } catch (CrudException $e) {
             throw new OrganizationsException($e->getMessage());
@@ -148,7 +156,6 @@ class OrganizationService
     public function getBySlug(string $slug)
     {
         $organizations = $this->getMany([], 1, 1, ['slug' => $slug, 'deleted' => false]);
-
         return count($organizations) ? $organizations[0] : null;
     }
 }
