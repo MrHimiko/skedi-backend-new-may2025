@@ -1,5 +1,4 @@
 <?php
-
 namespace App\Plugins\Teams\Controller;
 
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
@@ -9,8 +8,12 @@ use Symfony\Component\HttpFoundation\Request;
 use App\Service\ResponseService;
 use App\Plugins\Teams\Service\TeamService;
 use App\Plugins\Teams\Service\UserTeamService;
+use App\Plugins\Teams\Service\TeamPermissionService;
 use App\Plugins\Teams\Exception\TeamsException;
 use App\Plugins\Organizations\Service\UserOrganizationService;
+use Doctrine\ORM\EntityManagerInterface;
+use App\Plugins\Teams\Entity\TeamEntity;
+use App\Plugins\Events\Entity\EventEntity;
 
 #[Route('/api/organizations/{organization_id}', requirements: ['organization_id' => '\d+'])]
 class TeamController extends AbstractController
@@ -19,51 +22,62 @@ class TeamController extends AbstractController
     private TeamService $teamService;
     private UserTeamService $userTeamService;
     private UserOrganizationService $userOrganizationService;
+    private TeamPermissionService $permissionService;
+    private EntityManagerInterface $entityManager;
 
     public function __construct(
         ResponseService $responseService,
         TeamService $teamService,
         UserTeamService $userTeamService,
-        UserOrganizationService $userOrganizationService
+        UserOrganizationService $userOrganizationService,
+        TeamPermissionService $permissionService,
+        EntityManagerInterface $entityManager
     ) {
         $this->responseService = $responseService;
         $this->teamService = $teamService;
         $this->userTeamService = $userTeamService;
         $this->userOrganizationService = $userOrganizationService;
+        $this->permissionService = $permissionService;
+        $this->entityManager = $entityManager;
     }
 
     #[Route('/teams', name: 'teams_get_many#', methods: ['GET'])]
     public function getTeams(int $organization_id, Request $request): JsonResponse
     {
         $user = $request->attributes->get('user');
+        $filters = $request->attributes->get('filters');
+        $page = $request->attributes->get('page');
+        $limit = $request->attributes->get('limit');
 
         try 
         {
-        
-            $organization = $this->userOrganizationService->getOrganizationByUser($organization_id, $user);
-       
-            if(!$organization) {
+            // Check if user has access to this organization
+            if(!$organization = $this->userOrganizationService->getOrganizationByUser($organization_id, $user)) {
                 return $this->responseService->json(false, 'Organization was not found.');
             }
             
-
-            // Get teams within this organization
-            $teams = $this->teamService->getTeamsByOrganization($organization->entity);
-
-            foreach($teams as &$team)
-            {
-                $team = $team->toArray();
+            // Get teams for this organization
+            $teams = $this->teamService->getMany($filters, $page, $limit, [
+                'organization' => $organization->entity
+            ]);
+            
+            $result = [];
+            foreach ($teams as $team) {
+                $teamData = $team->toArray();
+                
+                // Add user's effective role for this team
+                $effectiveRole = $this->permissionService->getEffectiveRole($user, $team);
+                $teamData['role'] = $effectiveRole;
+                $teamData['effective_role'] = $effectiveRole;
+                
+                $result[] = $teamData;
             }
-       
-            return $this->responseService->json(true, 'Teams retrieved successfully.', $teams);
-        } 
-        catch (TeamsException $e) 
-        {
+            
+            return $this->responseService->json(true, 'Teams retrieved successfully.', $result);
+        } catch (TeamsException $e) {
             return $this->responseService->json(false, $e->getMessage(), null, 400);
-        } 
-        catch (\Exception $e) 
-        {
-            return $this->responseService->json(false, $e, null, 500);
+        } catch (\Exception $e) {
+            return $this->responseService->json(false, 'Unexpected error occurred.', null, 500);
         }
     }
 
@@ -71,7 +85,7 @@ class TeamController extends AbstractController
     public function getTeamById(int $organization_id, int $id, Request $request): JsonResponse
     {
         $user = $request->attributes->get('user');
-        
+
         try 
         {
             // Check if user has access to this organization
@@ -83,13 +97,19 @@ class TeamController extends AbstractController
             if(!$team = $this->teamService->getTeamByIdAndOrganization($id, $organization->entity)) {
                 return $this->responseService->json(false, 'Team was not found.');
             }
-
-            return $this->responseService->json(true, 'Team retrieved successfully.', $team->toArray());
-        } 
-        catch (TeamsException $e) {
+            
+            $teamData = $team->toArray();
+            
+            // Add user's effective role for this team
+            $effectiveRole = $this->permissionService->getEffectiveRole($user, $team);
+            $teamData['role'] = $effectiveRole;
+            $teamData['effective_role'] = $effectiveRole;
+            
+            return $this->responseService->json(true, 'Team retrieved successfully.', $teamData);
+        } catch (TeamsException $e) {
             return $this->responseService->json(false, $e->getMessage(), null, 400);
         } catch (\Exception $e) {
-            return $this->responseService->json(false, $e, null, 500);
+            return $this->responseService->json(false, 'Unexpected error occurred.', null, 500);
         }
     }
 
@@ -101,43 +121,68 @@ class TeamController extends AbstractController
 
         try 
         {
-            // Check if user has admin access to this organization
+            global $team;
+
+            // Check if user has access to this organization
             if(!$organization = $this->userOrganizationService->getOrganizationByUser($organization_id, $user)) {
                 return $this->responseService->json(false, 'Organization was not found.');
             }
             
-            if($organization->role !== 'admin') {
-                return $this->responseService->json(false, 'You do not have permission to create teams in this organization.');
-            }
-
-            // Get the parent_id from query parameter if it exists
-            if ($request->query->has('parent_team_id')) {
-                $data['parent_team_id'] = $request->query->get('parent_team_id');
+            // Check if parent_team_id is in query parameters
+            $parentTeamId = $request->query->get('parent_team_id');
+            if ($parentTeamId) {
+                $data['parent_team_id'] = $parentTeamId;
             }
             
+            // Check permissions based on whether this is a root team or subteam
+            if(isset($data['parent_team_id']) && $data['parent_team_id']) {
+                // Creating a subteam - check if user can create subteams under the parent
+                $parentTeam = $this->teamService->getTeamByIdAndOrganization($data['parent_team_id'], $organization->entity);
+                if(!$parentTeam) {
+                    return $this->responseService->json(false, 'Parent team not found in this organization.');
+                }
+                
+                if(!$this->permissionService->canCreateSubteam($user, $parentTeam)) {
+                    return $this->responseService->json(false, 'You do not have permission to create subteams under this team.');
+                }
+            } else {
+                // Creating a root team - check if user is organization admin
+                if(!$this->permissionService->canCreateTeamInOrganization($user, $organization->entity)) {
+                    return $this->responseService->json(false, 'You do not have permission to create teams in this organization.');
+                }
+            }
             
-            // Create team with organization set in callback
-            $team = $this->teamService->create($data, function($team) use ($organization, $data) {
+            // Create the team
+            $team = $this->teamService->create($data, function($team) use($organization, $data) {
                 $team->setOrganization($organization->entity);
                 
-                // Explicitly set parent team if provided
+                // Set parent team if specified
                 if(isset($data['parent_team_id']) && $data['parent_team_id']) {
-                    $parentTeam = $this->teamService->getTeamByIdAndOrganization($data['parent_team_id'], $organization->entity);
+                    $parentTeam = $this->teamService->getOne($data['parent_team_id']);
                     if($parentTeam) {
                         $team->setParentTeam($parentTeam);
                     }
                 }
             });
 
-
-
+            // Add the creator as admin of the new team
             $userTeam = $this->userTeamService->create([], function($userTeam) use($user, $team) {
                 $userTeam->setUser($user);
                 $userTeam->setTeam($team);
                 $userTeam->setRole('admin');
             });
 
-            return $this->responseService->json(true, 'Team created successfully.', $team->toArray(), 201);
+            // Prepare response with role information
+            $response = $team->toArray();
+            if ($team->getParentTeam()) {
+                $response['parent_team_id'] = $team->getParentTeam()->getId();
+            }
+            
+            // Add role information to response
+            $response['role'] = 'admin';
+            $response['effective_role'] = 'admin';
+
+            return $this->responseService->json(true, 'Team created successfully.', $response, 201);
         } 
         catch (TeamsException $e)
         {
@@ -152,7 +197,7 @@ class TeamController extends AbstractController
         } 
         catch (\Exception $e) 
         {
-            return $this->responseService->json(false, $e, null, 500);
+            return $this->responseService->json(false, $e->getMessage(), null, 500);
         }
     }
 
@@ -164,13 +209,9 @@ class TeamController extends AbstractController
 
         try 
         {
-            // Check if user has admin access to this organization
+            // Check if user has access to this organization
             if(!$organization = $this->userOrganizationService->getOrganizationByUser($organization_id, $user)) {
                 return $this->responseService->json(false, 'Organization was not found.');
-            }
-            
-            if($organization->role !== 'admin') {
-                return $this->responseService->json(false, 'You do not have permission to update teams in this organization.');
             }
             
             // Get team by ID ensuring it belongs to the organization
@@ -178,10 +219,16 @@ class TeamController extends AbstractController
                 return $this->responseService->json(false, 'Team was not found.');
             }
             
+            // Check if user has permission to edit this team
+            if(!$this->permissionService->canEditTeam($user, $team)) {
+                return $this->responseService->json(false, 'You do not have permission to update this team.');
+            }
+            
             // Handle parent_team_id if it's being updated
             if(isset($data['parent_team_id']) && $data['parent_team_id']) {
                 // Verify the parent team exists and belongs to this organization
-                if(!$this->teamService->getTeamByIdAndOrganization($data['parent_team_id'], $organization->entity)) {
+                $newParentTeam = $this->teamService->getTeamByIdAndOrganization($data['parent_team_id'], $organization->entity);
+                if(!$newParentTeam) {
                     return $this->responseService->json(false, 'Parent team not found in this organization.');
                 }
                 
@@ -189,15 +236,27 @@ class TeamController extends AbstractController
                 if($data['parent_team_id'] == $id) {
                     return $this->responseService->json(false, 'A team cannot be its own parent.');
                 }
+                
+                // Check if moving would create a circular reference
+                if($this->teamService->isDescendantOf($newParentTeam, $team)) {
+                    return $this->responseService->json(false, 'Cannot set a descendant team as parent.');
+                }
             }
 
             $this->teamService->update($team, $data);
 
-            return $this->responseService->json(true, 'Team updated successfully.', $team->toArray());
+            $teamData = $team->toArray();
+            
+            // Add user's effective role for this team
+            $effectiveRole = $this->permissionService->getEffectiveRole($user, $team);
+            $teamData['role'] = $effectiveRole;
+            $teamData['effective_role'] = $effectiveRole;
+
+            return $this->responseService->json(true, 'Team updated successfully.', $teamData);
         } catch (TeamsException $e) {
             return $this->responseService->json(false, $e->getMessage(), null, 400);
         } catch (\Exception $e) {
-            return $this->responseService->json(false, $e, null, 500);
+            return $this->responseService->json(false, $e->getMessage(), null, 500);
         }
     }
 
@@ -208,13 +267,9 @@ class TeamController extends AbstractController
 
         try 
         {
-            // Check if user has admin access to this organization
+            // Check if user has access to this organization
             if(!$organization = $this->userOrganizationService->getOrganizationByUser($organization_id, $user)) {
                 return $this->responseService->json(false, 'Organization was not found.');
-            }
-            
-            if($organization->role !== 'admin') {
-                return $this->responseService->json(false, 'You do not have permission to delete teams in this organization.');
             }
             
             // Get team by ID ensuring it belongs to the organization
@@ -222,18 +277,60 @@ class TeamController extends AbstractController
                 return $this->responseService->json(false, 'Team was not found.');
             }
             
-            // Check if team has child teams before deleting
-            if($this->teamService->hasChildTeams($team)) {
-                return $this->responseService->json(false, 'Cannot delete a team that has child teams. Please delete or reassign child teams first.');
+            // Check if user has permission to delete this team
+            if(!$this->permissionService->canEditTeam($user, $team)) {
+                return $this->responseService->json(false, 'You do not have permission to delete this team.');
             }
-
-            $this->teamService->delete($team);
-
-            return $this->responseService->json(true, 'Team soft-deleted successfully.', $team->toArray());
+            
+            // Handle cascade deletion directly here
+            $this->entityManager->beginTransaction();
+            
+            try {
+                $this->cascadeDeleteTeam($team);
+                $this->entityManager->flush();
+                $this->entityManager->commit();
+                
+                return $this->responseService->json(true, 'Team deleted successfully.');
+            } catch (\Exception $e) {
+                $this->entityManager->rollback();
+                throw $e;
+            }
         } catch (TeamsException $e) {
             return $this->responseService->json(false, $e->getMessage(), null, 400);
         } catch (\Exception $e) {
             return $this->responseService->json(false, 'Unexpected error occurred.', null, 500);
         }
+    }
+    
+    /**
+     * Helper method to cascade delete a team
+     */
+    private function cascadeDeleteTeam(TeamEntity $team): void
+    {
+        // Get all child teams
+        $childTeams = $this->entityManager->getRepository(TeamEntity::class)->findBy([
+            'parentTeam' => $team,
+            'deleted' => false
+        ]);
+        
+        // Recursively delete child teams
+        foreach ($childTeams as $childTeam) {
+            $this->cascadeDeleteTeam($childTeam);
+        }
+        
+        // Delete events for this team
+        $events = $this->entityManager->getRepository(EventEntity::class)->findBy([
+            'team' => $team,
+            'deleted' => false
+        ]);
+        
+        foreach ($events as $event) {
+            $event->setDeleted(true);
+            $this->entityManager->persist($event);
+        }
+        
+        // Delete the team
+        $team->setDeleted(true);
+        $this->entityManager->persist($team);
     }
 }

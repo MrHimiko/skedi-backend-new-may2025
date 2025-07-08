@@ -17,6 +17,7 @@ use Doctrine\ORM\EntityManagerInterface;
 use App\Plugins\Organizations\Service\OrganizationService;
 use App\Plugins\Organizations\Service\UserOrganizationService;
 use Symfony\Component\PasswordHasher\Hasher\UserPasswordHasherInterface;
+use App\Plugins\Teams\Service\TeamPermissionService;
 
 #[Route('/api/account')]
 class MainController extends AbstractController
@@ -31,6 +32,7 @@ class MainController extends AbstractController
     private EntityManagerInterface $entityManager;
     private UserOrganizationService $userOrganizationService;
     private UserPasswordHasherInterface $passwordHasher;
+    private TeamPermissionService $permissionService;
 
     public function __construct(
         ResponseService $responseService,
@@ -42,7 +44,8 @@ class MainController extends AbstractController
         OrganizationService $organizationService,
         EntityManagerInterface $entityManager,
         UserOrganizationService $userOrganizationService,
-        UserPasswordHasherInterface $passwordHasher
+        UserPasswordHasherInterface $passwordHasher,
+        TeamPermissionService $permissionService
     ) {
         $this->responseService = $responseService;
         $this->loginService = $loginService;
@@ -54,6 +57,7 @@ class MainController extends AbstractController
         $this->entityManager = $entityManager;
         $this->userOrganizationService = $userOrganizationService;
         $this->passwordHasher = $passwordHasher;
+        $this->permissionService = $permissionService;
     }
 
 
@@ -185,8 +189,8 @@ class MainController extends AbstractController
             }, $orgEventsWithoutTeam);
         }
 
-        // Process and expand teams with all accessible teams
-        $allTeams = $this->getAllAccessibleTeams($directTeams, $organizations);
+        // Process and expand teams with all accessible teams - PASS THE USER HERE
+        $allTeams = $this->getAllAccessibleTeams($directTeams, $organizations, $user);
         
         // Add events to each team
         foreach ($allTeams as $team) {
@@ -220,7 +224,7 @@ class MainController extends AbstractController
      * 2. Organization membership
      * 3. Parent-child team relationships
      */
-    private function getAllAccessibleTeams(array $directTeams, array $organizations): array
+    private function getAllAccessibleTeams(array $directTeams, array $organizations, $user): array
     {
         // Prepare a map to prevent duplicates using team IDs as keys
         $teamsMap = [];
@@ -229,79 +233,65 @@ class MainController extends AbstractController
         foreach ($directTeams as $team) {
             $teamId = $team->entity->getId();
             if (!isset($teamsMap[$teamId])) {
+                // Get effective role using permission service
+                $effectiveRole = $this->permissionService->getEffectiveRole($user, $team->entity);
+                
                 // Convert entity to array if it's not already
                 if (is_object($team->entity) && method_exists($team->entity, 'toArray')) {
                     $team->entity = $team->entity->toArray();
                 }
+                
+                // Update roles to effective role
+                $team->role = $effectiveRole;
+                $team->effective_role = $effectiveRole;
+                
                 $teamsMap[$teamId] = $team;
             }
         }
         
         // 2. Add teams from organizations the user is a member of
         foreach ($organizations as $organization) {
-            $orgId = $organization->entity['id'];
+            // Get the organization entity properly
+            $orgEntity = $organization->entity;
+            if (is_array($orgEntity)) {
+                // If it's already converted to array, we need to get the actual entity
+                $orgId = $orgEntity['id'];
+                $orgEntity = $this->organizationService->getOne($orgId);
+            }
+            
+            if (!$orgEntity) {
+                continue;
+            }
             
             try {
                 // Get all teams in this organization
-                $orgTeams = $this->teamService->getMany([], 1, 1000, [
-                    'organization' => $orgId,
-                    'deleted' => false
-                ]);
+                $orgTeams = $this->teamService->getTeamsByOrganization($orgEntity);
                 
                 foreach ($orgTeams as $orgTeam) {
                     $teamId = $orgTeam->getId();
                     if (!isset($teamsMap[$teamId])) {
+                        // Get effective role for this team
+                        $effectiveRole = $this->permissionService->getEffectiveRole($user, $orgTeam);
+                        
                         // Create an object with the same structure as direct teams
                         $teamsMap[$teamId] = (object) [
                             'entity' => $orgTeam->toArray(),
-                            'role' => 'member', // Default role for teams accessed via organization
+                            'role' => $effectiveRole,
+                            'effective_role' => $effectiveRole,
                             'access_via' => 'organization'
                         ];
                     }
                 }
             } catch (\Exception $e) {
                 // Log error but continue processing other organizations
+                error_log('Error getting teams for organization: ' . $e->getMessage());
                 continue;
             }
         }
         
-        // 3. Process child teams for all teams we have so far
-        $processedTeamIds = array_keys($teamsMap);
-        $teamIdsToProcess = $processedTeamIds;
-        
-        while (!empty($teamIdsToProcess)) {
-            $currentTeamId = array_shift($teamIdsToProcess);
-            
-            try {
-                // Get all child teams for this team
-                $childTeams = $this->teamService->getMany([], 1, 1000, [
-                    'parentTeam' => $currentTeamId,
-                    'deleted' => false
-                ]);
-                
-                foreach ($childTeams as $childTeam) {
-                    $childTeamId = $childTeam->getId();
-                    
-                    // If we haven't processed this team yet
-                    if (!isset($teamsMap[$childTeamId])) {
-                        // Add to map
-                        $teamsMap[$childTeamId] = (object) [
-                            'entity' => $childTeam->toArray(),
-                            'role' => $teamsMap[$currentTeamId]->role, // Inherit role from parent
-                            'access_via' => 'parent_team'
-                        ];
-                        
-                        // Add to processing queue to find its children
-                        $teamIdsToProcess[] = $childTeamId;
-                    }
-                }
-            } catch (\Exception $e) {
-                // Log error but continue processing other teams
-                continue;
-            }
-        }
-        
-        // Convert map back to indexed array
+        // 3. Return all teams as array
         return array_values($teamsMap);
     }
+
+
 }

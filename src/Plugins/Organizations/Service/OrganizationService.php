@@ -129,24 +129,8 @@ class OrganizationService
     public function delete(OrganizationEntity $organization, bool $hard = false): void
     {
         try {
-            if (!$hard) {
-                // Cascade soft delete all teams in this organization
-                $teams = $this->teamService->getTeamsByOrganization($organization);
-                foreach ($teams as $team) {
-                    $this->teamService->delete($team, false);
-                }
-                
-                // Soft delete all events directly in this organization
-                $events = $this->eventService->getEventsByOrganization($organization);
-                foreach ($events as $event) {
-                    // Only delete events that don't have a team (org-level events)
-                    if ($event->getTeam() === null) {
-                        $this->eventService->delete($event, false);
-                    }
-                }
-            }
-            
-            // Delete the organization itself
+            // Simply delete the organization
+            // Teams and events will remain but be orphaned
             $this->crudManager->delete($organization, $hard);
         } catch (CrudException $e) {
             throw new OrganizationsException($e->getMessage());

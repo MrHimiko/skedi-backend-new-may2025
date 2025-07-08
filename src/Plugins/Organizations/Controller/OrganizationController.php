@@ -10,6 +10,9 @@ use App\Service\ResponseService;
 use App\Plugins\Organizations\Service\OrganizationService;
 use App\Plugins\Organizations\Service\UserOrganizationService;
 use App\Plugins\Organizations\Exception\OrganizationsException;
+use Doctrine\ORM\EntityManagerInterface;
+use App\Plugins\Teams\Entity\TeamEntity;
+use App\Plugins\Events\Entity\EventEntity;
 
 #[Route('/api')]
 class OrganizationController extends AbstractController
@@ -17,15 +20,18 @@ class OrganizationController extends AbstractController
     private ResponseService $responseService;
     private OrganizationService $organizationService;
     private UserOrganizationService $userOrganizationService;
+    private EntityManagerInterface $entityManager;
 
     public function __construct(
         ResponseService $responseService,
         OrganizationService $organizationService,
         UserOrganizationService $userOrganizationService,
+        EntityManagerInterface $entityManager
     ) {
         $this->responseService = $responseService;
         $this->organizationService = $organizationService;
         $this->userOrganizationService = $userOrganizationService;
+        $this->entityManager = $entityManager;
     }
 
     #[Route('/organizations', name: 'organizations_get_many#', methods: ['GET'])]
@@ -37,12 +43,13 @@ class OrganizationController extends AbstractController
         {
             $organizations = $this->userOrganizationService->getOrganizationsByUser($user);
 
-            foreach($organizations as &$organization)
+            $result = [];
+            foreach($organizations as $organization)
             {
-                $organization = $organization->entity->toArray();
+                $result[] = $organization->entity->toArray();
             }
        
-            return $this->responseService->json(true, 'Organizations retrieved successfully.', $organizations);
+            return $this->responseService->json(true, 'Organizations retrieved successfully.', $result);
         } 
         catch (OrganizationsException $e) 
         {
@@ -86,10 +93,7 @@ class OrganizationController extends AbstractController
 
         try 
         {
-            $organization = $this->organizationService->create($data, function($organization) 
-            {
-                // $organization->setUser($user);
-            });
+            $organization = $this->organizationService->create($data);
 
             $userOrganization = $this->userOrganizationService->create([], function($userOrganization) use($user, $organization)
             {
@@ -102,9 +106,7 @@ class OrganizationController extends AbstractController
         } 
         catch (OrganizationsException $e)
         {
-            global $organization;
-
-            if($organization?->getId())
+            if(isset($organization) && $organization->getId())
             {
                 $this->organizationService->delete($organization, true);
             }
@@ -166,10 +168,44 @@ class OrganizationController extends AbstractController
                 return $this->responseService->json(false, 'You do not have permission to delete this organization.');
             }
 
-            // Simple soft delete - just mark the organization as deleted
-            $this->organizationService->delete($organization->entity);
+            // Handle cascade deletion directly here
+            $this->entityManager->beginTransaction();
+            
+            try {
+                // Get all teams in this organization
+                $teams = $this->entityManager->getRepository(TeamEntity::class)->findBy([
+                    'organization' => $organization->entity,
+                    'deleted' => false
+                ]);
 
-            return $this->responseService->json(true, 'Organization deleted successfully.');
+                // Delete all teams and their events
+                foreach ($teams as $team) {
+                    $this->cascadeDeleteTeam($team);
+                }
+
+                // Get and delete organization-level events (events without a team)
+                $orgEvents = $this->entityManager->getRepository(EventEntity::class)->findBy([
+                    'organization' => $organization->entity,
+                    'team' => null,
+                    'deleted' => false
+                ]);
+
+                foreach ($orgEvents as $event) {
+                    $event->setDeleted(true);
+                    $this->entityManager->persist($event);
+                }
+
+                // Finally, delete the organization
+                $this->organizationService->delete($organization->entity);
+                
+                $this->entityManager->flush();
+                $this->entityManager->commit();
+
+                return $this->responseService->json(true, 'Organization deleted successfully.');
+            } catch (\Exception $e) {
+                $this->entityManager->rollback();
+                throw $e;
+            }
         } 
         catch (OrganizationsException $e) 
         {
@@ -179,5 +215,37 @@ class OrganizationController extends AbstractController
         {
             return $this->responseService->json(false, 'An error occurred while deleting the organization.', null, 500);
         }
+    }
+
+    /**
+     * Helper method to cascade delete a team
+     */
+    private function cascadeDeleteTeam(TeamEntity $team): void
+    {
+        // Get all child teams
+        $childTeams = $this->entityManager->getRepository(TeamEntity::class)->findBy([
+            'parentTeam' => $team,
+            'deleted' => false
+        ]);
+        
+        // Recursively delete child teams
+        foreach ($childTeams as $childTeam) {
+            $this->cascadeDeleteTeam($childTeam);
+        }
+        
+        // Delete events for this team
+        $events = $this->entityManager->getRepository(EventEntity::class)->findBy([
+            'team' => $team,
+            'deleted' => false
+        ]);
+        
+        foreach ($events as $event) {
+            $event->setDeleted(true);
+            $this->entityManager->persist($event);
+        }
+        
+        // Delete the team
+        $team->setDeleted(true);
+        $this->entityManager->persist($team);
     }
 }
