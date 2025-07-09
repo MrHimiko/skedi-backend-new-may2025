@@ -260,6 +260,20 @@ class EventService
 
             $result = $this->crudManager->update($event, $data, $constraints, $transform);
 
+            if (isset($data['team_id'])) {
+                if ($data['team_id']) {
+                    $team = $this->entityManager->getRepository(TeamEntity::class)->find($data['team_id']);
+                    if (!$team) {
+                        throw new EventsException('Team not found.');
+                    }
+                    $event->setTeam($team);
+                } else {
+                    // If team_id is null or 0, remove the team assignment
+                    $event->setTeam(null);
+                }
+                $this->entityManager->flush();
+            }
+
     
             // Update assignees if provided
             if ($assignees !== null && is_array($assignees)) {
@@ -389,15 +403,9 @@ class EventService
     {
         $criteria = [
             'slug' => $slug,
-            'deleted' => false
+            'deleted' => false,
+            'organization' => $organization
         ];
-        
-        if ($team) {
-            $criteria['team'] = $team;
-        } else {
-            $criteria['organization'] = $organization;
-            $criteria['team'] = null;
-        }
         
         return $this->entityManager->getRepository(EventEntity::class)->findOneBy($criteria);
     }

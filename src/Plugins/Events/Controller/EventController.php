@@ -492,10 +492,12 @@ class EventController extends AbstractController
             if (!$organization) {
                 return $this->responseService->json(false, 'not-found', null, 404);
             }
-            
+
+
             // Get event by slug and organization
             $event = $this->eventService->getEventBySlug($event_slug, null, $organization);
-            
+
+
             if (!$event || $event->isDeleted()) {
                 return $this->responseService->json(false, 'not-found', null, 404);
             }
