@@ -155,28 +155,34 @@ class ContactService
         try {
             $now = new \DateTime();
             
-            // We need callback here because we need to join with booking and check cancelled status
+            // First get all contact bookings for this contact
             $contactBookings = $this->crudManager->findMany(
                 ContactBookingEntity::class,
                 [],
                 1,
-                1,
+                100, // Get more to filter in PHP
                 [
                     'contact' => $contact,
                     'organization' => $organization
-                ],
-                function($queryBuilder) use ($now) {
-                    $queryBuilder->join('t1.booking', 'b')
-                        ->where('b.cancelled = :cancelled')
-                        ->andWhere('b.startTime < :now')
-                        ->setParameter('cancelled', false)
-                        ->setParameter('now', $now)
-                        ->orderBy('b.startTime', 'DESC');
-                }
+                ]
             );
-
-            if (!empty($contactBookings)) {
-                $contactBooking = $contactBookings[0];
+            
+            // Filter for past meetings in PHP
+            $pastMeetings = [];
+            foreach ($contactBookings as $contactBooking) {
+                $booking = $contactBooking->getBooking();
+                if (!$booking->isCancelled() && $booking->getStartTime() < $now) {
+                    $pastMeetings[] = $contactBooking;
+                }
+            }
+            
+            // Sort by start time descending to get the most recent
+            usort($pastMeetings, function($a, $b) {
+                return $b->getBooking()->getStartTime() <=> $a->getBooking()->getStartTime();
+            });
+            
+            if (!empty($pastMeetings)) {
+                $contactBooking = $pastMeetings[0];
                 $booking = $contactBooking->getBooking();
                 $event = $contactBooking->getEvent();
                 
@@ -193,6 +199,7 @@ class ContactService
             return null;
         }
     }
+
 
     /**
      * Get next meeting for a contact using CrudManager
@@ -202,28 +209,34 @@ class ContactService
         try {
             $now = new \DateTime();
             
-            // We need callback here because we need to join with booking and check cancelled status
+            // Get all contact bookings for this contact
             $contactBookings = $this->crudManager->findMany(
                 ContactBookingEntity::class,
                 [],
                 1,
-                1,
+                100, // Get more to filter in PHP
                 [
                     'contact' => $contact,
                     'organization' => $organization
-                ],
-                function($queryBuilder) use ($now) {
-                    $queryBuilder->join('t1.booking', 'b')
-                        ->where('b.cancelled = :cancelled')
-                        ->andWhere('b.startTime >= :now')
-                        ->setParameter('cancelled', false)
-                        ->setParameter('now', $now)
-                        ->orderBy('b.startTime', 'ASC');
-                }
+                ]
             );
-
-            if (!empty($contactBookings)) {
-                $contactBooking = $contactBookings[0];
+            
+            // Filter for future meetings in PHP
+            $futureMeetings = [];
+            foreach ($contactBookings as $contactBooking) {
+                $booking = $contactBooking->getBooking();
+                if (!$booking->isCancelled() && $booking->getStartTime() >= $now) {
+                    $futureMeetings[] = $contactBooking;
+                }
+            }
+            
+            // Sort by start time ascending to get the next upcoming
+            usort($futureMeetings, function($a, $b) {
+                return $a->getBooking()->getStartTime() <=> $b->getBooking()->getStartTime();
+            });
+            
+            if (!empty($futureMeetings)) {
+                $contactBooking = $futureMeetings[0];
                 $booking = $contactBooking->getBooking();
                 $event = $contactBooking->getEvent();
                 
@@ -240,7 +253,6 @@ class ContactService
             return null;
         }
     }
-
     /**
      * Get host contacts (for "My Contacts" view)
      */
@@ -331,7 +343,7 @@ class ContactService
                             $hostContact->getFirstMeeting()->format('Y-m-d H:i:s') : null,
                         'last_meeting' => $hostContact->getLastMeeting() ? 
                             $hostContact->getLastMeeting()->format('Y-m-d H:i:s') : null,
-                        'is_favorite' => $isFavorite
+                        'is_favorite' => $hostContact->isFavorite()
                     ],
                     'organization_contact' => [
                         'is_favorite' => $isFavorite
@@ -397,12 +409,55 @@ class ContactService
         $this->entityManager->flush();
     }
 
-    public function toggleFavorite(OrganizationContactEntity $orgContact): bool
+    public function toggleFavorite(int $contactId, UserEntity $user, ?OrganizationEntity $organization = null): bool
     {
-        $orgContact->setIsFavorite(!$orgContact->isFavorite());
-        $this->entityManager->flush();
-        
-        return $orgContact->isFavorite();
+        try {
+            if ($organization) {
+                // Toggle favorite for organization contact
+                $orgContacts = $this->crudManager->findMany(
+                    OrganizationContactEntity::class,
+                    [],
+                    1,
+                    1,
+                    [
+                        'contact' => $contactId,
+                        'organization' => $organization,
+                        'deleted' => false
+                    ]
+                );
+                
+                if (!empty($orgContacts)) {
+                    $contact = $orgContacts[0];
+                    $contact->setIsFavorite(!$contact->isFavorite());
+                    $this->entityManager->flush();
+                    return $contact->isFavorite();
+                }
+            } else {
+                // Toggle favorite for host contact (My Contacts)
+                $hostContacts = $this->crudManager->findMany(
+                    HostContactEntity::class,
+                    [],
+                    1,
+                    1,
+                    [
+                        'contact' => $contactId,
+                        'host' => $user,
+                        'deleted' => false
+                    ]
+                );
+                
+                if (!empty($hostContacts)) {
+                    $hostContact = $hostContacts[0];
+                    $hostContact->setIsFavorite(!$hostContact->isFavorite());
+                    $this->entityManager->flush();
+                    return $hostContact->isFavorite();
+                }
+            }
+            
+            throw new ContactsException('Contact not found');
+        } catch (\Exception $e) {
+            throw new ContactsException('Failed to toggle favorite: ' . $e->getMessage());
+        }
     }
 
     public function getContactByEmail(string $email): ?ContactEntity

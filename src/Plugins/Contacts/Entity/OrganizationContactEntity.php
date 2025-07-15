@@ -213,7 +213,7 @@ class OrganizationContactEntity
             'tags' => $this->getTags(),
             'notes' => $this->getNotes(),
             'custom_fields' => $this->getCustomFields(),
-            'is_favorite' => $this->isFavorite(), // Add this line
+            'is_favorite' => $this->isFavorite(), 
             'created' => $this->getCreated()->format('Y-m-d H:i:s'),
             'updated' => $this->getUpdated()->format('Y-m-d H:i:s'),
         ];

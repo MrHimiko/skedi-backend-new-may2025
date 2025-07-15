@@ -45,6 +45,10 @@ class HostContactEntity
     #[ORM\Column(name: "notes", type: "text", nullable: true)]
     private ?string $notes = null;
 
+    #[ORM\Column(name: "is_favorite", type: "boolean", options: ["default" => false])]
+    private bool $isFavorite = false;
+
+
     #[ORM\Column(name: "created", type: "datetime", nullable: false)]
     private DateTimeInterface $created;
 
@@ -92,6 +96,17 @@ class HostContactEntity
     
     public function isDeleted(): bool { return $this->deleted; }
     public function setDeleted(bool $deleted): self { $this->deleted = $deleted; return $this; }
+
+    public function isFavorite(): bool 
+    { 
+        return $this->isFavorite; 
+    }
+
+    public function setIsFavorite(bool $isFavorite): self 
+    { 
+        $this->isFavorite = $isFavorite; 
+        return $this; 
+    }
     
     #[ORM\PreUpdate]
     public function updateTimestamp(): void

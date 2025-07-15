@@ -13,6 +13,11 @@ use App\Plugins\Organizations\Service\OrganizationService;
 use App\Plugins\Organizations\Service\UserOrganizationService;
 use App\Plugins\Contacts\Service\ContactService;
 use App\Plugins\Contacts\Exception\ContactsException;
+use App\Plugins\Contacts\Entity\HostContactEntity;
+use App\Plugins\Contacts\Entity\ContactEntity;    
+use App\Plugins\Contacts\Entity\OrganizationContactEntity;
+use App\Plugins\Contacts\Service\ContactExportService;
+use App\Plugins\Contacts\Controller\Response;
 
 #[Route('/api/user')]
 class ContactController extends AbstractController
@@ -22,19 +27,22 @@ class ContactController extends AbstractController
     private UserOrganizationService $userOrganizationService;
     private ContactService $contactService;
     private EntityManagerInterface $entityManager;
+    private ContactExportService $contactExportService;
 
     public function __construct(
         ResponseService $responseService,
         OrganizationService $organizationService,
         UserOrganizationService $userOrganizationService,
         ContactService $contactService,
-        EntityManagerInterface $entityManager
+        EntityManagerInterface $entityManager,
+        ContactExportService $contactExportService
     ) {
         $this->responseService = $responseService;
         $this->organizationService = $organizationService;
         $this->userOrganizationService = $userOrganizationService;
         $this->contactService = $contactService;
         $this->entityManager = $entityManager;
+        $this->contactExportService = $contactExportService;
     }
 
     #[Route('/contacts/my-contacts', name: 'my_contacts_list#', methods: ['GET'])]
@@ -290,4 +298,165 @@ class ContactController extends AbstractController
             return $this->responseService->json(false, 'An error occurred.', null, 500);
         }
     }
+
+   #[Route('/contacts/{contact_id}/toggle-favorite', name: 'my_contact_toggle_favorite#', methods: ['POST'])]
+    public function toggleMyContactFavorite(int $contact_id, Request $request): JsonResponse
+    {
+        $user = $request->attributes->get('user');
+        
+        try {
+            // Get the contact first
+            $contact = $this->entityManager->getRepository(ContactEntity::class)->find($contact_id);
+            
+            if (!$contact) {
+                return $this->responseService->json(false, 'Contact not found', null, 404);
+            }
+            
+            // Look for host contacts
+            $hostContacts = $this->entityManager->getRepository(HostContactEntity::class)
+                ->findBy([
+                    'contact' => $contact,
+                    'host' => $user,
+                    'deleted' => false
+                ]);
+            
+            if (empty($hostContacts)) {
+                return $this->responseService->json(false, 'Contact not found in your contacts.', null, 404);
+            }
+            
+            // Toggle favorite
+            $hostContact = $hostContacts[0];
+            $hostContact->setIsFavorite(!$hostContact->isFavorite());
+            $this->entityManager->flush();
+            
+            return $this->responseService->json(
+                true, 
+                'Favorite status updated successfully.', 
+                ['is_favorite' => $hostContact->isFavorite()]
+            );
+        } catch (\Exception $e) {
+            return $this->responseService->json(false, 'Error: ' . $e->getMessage(), null, 400);
+        }
+    }
+
+
+
+
+    #[Route('/organizations/{organization_id}/contacts/{contact_id}/toggle-favorite', name: 'org_contact_toggle_favorite#', methods: ['POST'])]
+    public function toggleOrgContactFavorite(int $organization_id, int $contact_id, Request $request): JsonResponse
+    {
+        $user = $request->attributes->get('user');
+        
+        try {
+            $organization = $this->organizationService->getOne($organization_id);
+            
+            if (!$organization) {
+                return $this->responseService->json(false, 'Organization not found.', null, 404);
+            }
+            
+            // Fix: Use the correct method name
+            if (!$this->userOrganizationService->isUserInOrganization($user, $organization)) {
+                return $this->responseService->json(false, 'Access denied.', null, 403);
+            }
+            
+            // Get the organization contact
+            $orgContact = $this->entityManager->getRepository(OrganizationContactEntity::class)
+                ->findOneBy([
+                    'id' => $contact_id,
+                    'organization' => $organization,
+                    'deleted' => false
+                ]);
+                
+            if (!$orgContact) {
+                return $this->responseService->json(false, 'Contact not found.', null, 404);
+            }
+            
+            // Toggle favorite
+            $orgContact->setIsFavorite(!$orgContact->isFavorite());
+            $this->entityManager->flush();
+            
+            return $this->responseService->json(
+                true, 
+                'Favorite status updated successfully.', 
+                ['is_favorite' => $orgContact->isFavorite()]
+            );
+        } catch (\Exception $e) {
+            return $this->responseService->json(false, 'Error: ' . $e->getMessage(), null, 400);
+        }
+    }
+
+    #[Route('/contacts/{contact_id}', name: 'delete_my_contact#', methods: ['DELETE'])]
+    public function deleteMyContact(int $contact_id, Request $request): JsonResponse
+    {
+        $user = $request->attributes->get('user');
+        
+        try {
+            // First, find all host_contact records for this contact and user
+            $hostContacts = $this->entityManager->getRepository(HostContactEntity::class)
+                ->findBy([
+                    'contact' => $contact_id,
+                    'host' => $user,
+                    'deleted' => false
+                ]);
+            
+            if (empty($hostContacts)) {
+                return $this->responseService->json(false, 'Contact not found in your contacts.', null, 404);
+            }
+            
+            // Soft delete all host_contact records
+            foreach ($hostContacts as $hostContact) {
+                $hostContact->setDeleted(true);
+            }
+            
+            $this->entityManager->flush();
+            
+            return $this->responseService->json(true, 'Contact removed successfully.');
+        } catch (\Exception $e) {
+            return $this->responseService->json(false, 'Error: ' . $e->getMessage(), null, 400);
+        }
+    }
+
+
+    #[Route('/contacts/export', name: 'export_my_contacts#', methods: ['GET'])]
+    public function exportMyContacts(Request $request): \Symfony\Component\HttpFoundation\Response  // Use full namespace
+    {
+        $user = $request->attributes->get('user');
+        
+        try {
+            $filters = [
+                'search' => $request->query->get('search', '')
+            ];
+            
+            return $this->contactExportService->exportContacts($user, null, $filters);
+        } catch (\Exception $e) {
+            return $this->responseService->json(false, 'Export failed: ' . $e->getMessage(), null, 500);
+        }
+    }
+
+    #[Route('/organizations/{organization_id}/contacts/export', name: 'export_org_contacts#', methods: ['GET'])]
+    public function exportOrganizationContacts(int $organization_id, Request $request): \Symfony\Component\HttpFoundation\Response
+    {
+        $user = $request->attributes->get('user');
+        
+        try {
+            $organization = $this->organizationService->getOne($organization_id);
+            
+            if (!$organization) {
+                return $this->responseService->json(false, 'Organization not found.', null, 404);
+            }
+            
+            if (!$this->userOrganizationService->isUserInOrganization($user, $organization)) {
+                return $this->responseService->json(false, 'Access denied.', null, 403);
+            }
+            
+            $filters = [
+                'search' => $request->query->get('search', '')
+            ];
+            
+            return $this->contactExportService->exportContacts($user, $organization, $filters);
+        } catch (\Exception $e) {
+            return $this->responseService->json(false, 'Export failed: ' . $e->getMessage(), null, 500);
+        }
+    }
+
 }
