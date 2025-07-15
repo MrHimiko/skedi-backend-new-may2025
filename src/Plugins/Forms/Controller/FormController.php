@@ -48,11 +48,15 @@ class FormController extends AbstractController
                 return $this->responseService->json(false, 'Authentication required.');
             }
 
-            $forms = $this->formService->getMany($filters, $page, $limit);
+            // Get forms that the user created or that belong to their organizations
+            $forms = $this->formService->getManyForUser($user, $filters, $page, $limit);
 
             $result = [];
             foreach ($forms as $form) {
-                $result[] = $form->toArray();
+                $formArray = $form->toArray();
+                // Add events count
+                $formArray['events_count'] = 0; // TODO: Implement actual count
+                $result[] = $formArray;
             }
 
             return $this->responseService->json(true, 'Forms retrieved successfully.', $result);

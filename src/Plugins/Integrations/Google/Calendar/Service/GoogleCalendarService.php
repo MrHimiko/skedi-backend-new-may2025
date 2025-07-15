@@ -22,7 +22,7 @@ class GoogleCalendarService extends BaseCalendarIntegration
 {
     private string $clientId = '263415563843-iisvu1oericu0v5mvc7bl2c1p3obq2mq.apps.googleusercontent.com';
     private string $clientSecret = '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';
-    private string $redirectUri = 'https://app.skedi.com/oauth/google/callback';
+    private string $redirectUri = 'https://dev.skedi.com/oauth/google/callback';
     
     public function __construct(
         EntityManagerInterface $entityManager,

@@ -63,7 +63,7 @@ class GoogleMeetService
             $this->redirectUri = $parameterBag->get('google.redirect_uri');
         } catch (\Exception $e) {
             // Temporary fallback
-            $this->redirectUri = 'https://app.skedi.com/oauth/google/callback';
+            $this->redirectUri = 'https://dev.skedi.com/oauth/google/callback';
         }
     }
 
@@ -77,7 +77,7 @@ class GoogleMeetService
         // Set exact credentials without any string manipulation
         $clientId = '263415563843-iisvu1oericu0v5mvc7bl2c1p3obq2mq.apps.googleusercontent.com';
         $clientSecret = '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';
-        $redirectUri = 'https://app.skedi.com/oauth/google/callback';
+        $redirectUri = 'https://dev.skedi.com/oauth/google/callback';
         
         // Set client parameters
         $client->setClientId($clientId);
@@ -120,7 +120,7 @@ class GoogleMeetService
         
         $clientId = '263415563843-iisvu1oericu0v5mvc7bl2c1p3obq2mq.apps.googleusercontent.com';
         $clientSecret = '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';
-        $redirectUri = 'https://app.skedi.com/oauth/google/callback';
+        $redirectUri = 'https://dev.skedi.com/oauth/google/callback';
         
         $client->setClientId($clientId);
         $client->setClientSecret($clientSecret);
@@ -153,7 +153,7 @@ class GoogleMeetService
             // Set direct credentials
             $clientId = '263415563843-iisvu1oericu0v5mvc7bl2c1p3obq2mq.apps.googleusercontent.com';
             $clientSecret = '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';
-            $redirectUri = 'https://app.skedi.com/oauth/google/callback';
+            $redirectUri = 'https://dev.skedi.com/oauth/google/callback';
             
             // Set up client configuration
             $client->setClientId($clientId);

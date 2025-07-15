@@ -12,6 +12,7 @@ use App\Plugins\Forms\Entity\EventFormEntity;
 use App\Plugins\Forms\Exception\FormsException;
 use App\Plugins\Account\Entity\UserEntity;
 use App\Plugins\Events\Entity\EventEntity;
+use App\Plugins\Organizations\Service\UserOrganizationService;
 use App\Service\SlugService;
 
 class FormService
@@ -19,21 +20,23 @@ class FormService
     private CrudManager $crudManager;
     private EntityManagerInterface $entityManager;
     private SlugService $slugService;
+    private UserOrganizationService $userOrganizationService;
 
     public function __construct(
         CrudManager $crudManager,
         EntityManagerInterface $entityManager,
-        SlugService $slugService
+        SlugService $slugService,
+        UserOrganizationService $userOrganizationService
     ) {
         $this->crudManager = $crudManager;
         $this->entityManager = $entityManager;
         $this->slugService = $slugService;
+        $this->userOrganizationService = $userOrganizationService;
     }
 
     public function getMany(array $filters, int $page, int $limit, array $criteria = []): array
     {
         try {
-            // Remove organization from criteria - forms are now global
             return $this->crudManager->findMany(
                 FormEntity::class,
                 $filters,
@@ -46,6 +49,59 @@ class FormService
         }
     }
 
+    public function getManyForUser(UserEntity $user, array $filters, int $page, int $limit): array
+    {
+        try {
+            // Get all forms and filter in PHP
+            // This is not ideal but avoids custom queries
+            $allUserForms = [];
+            
+            // Get forms created by user
+            $userCreatedForms = $this->crudManager->findMany(
+                FormEntity::class,
+                $filters,
+                1,
+                1000, // Get all for now
+                ['deleted' => false, 'createdBy' => $user]
+            );
+            
+            foreach ($userCreatedForms as $form) {
+                $allUserForms[$form->getId()] = $form;
+            }
+            
+            // Get user's organizations using UserOrganizationService
+            $userOrganizations = $this->userOrganizationService->getOrganizationsByUser($user);
+            
+            foreach ($userOrganizations as $userOrg) {
+                if ($userOrg->entity) {
+                    // Get forms for this organization
+                    $orgForms = $this->crudManager->findMany(
+                        FormEntity::class,
+                        $filters,
+                        1,
+                        1000,
+                        ['deleted' => false, 'organization' => $userOrg->entity]
+                    );
+                    
+                    foreach ($orgForms as $form) {
+                        $allUserForms[$form->getId()] = $form;
+                    }
+                }
+            }
+            
+            // Convert to array and sort by ID desc
+            $forms = array_values($allUserForms);
+            usort($forms, fn($a, $b) => $b->getId() - $a->getId());
+            
+            // Apply pagination
+            $offset = ($page - 1) * $limit;
+            return array_slice($forms, $offset, $limit);
+            
+        } catch (CrudException $e) {
+            throw new FormsException($e->getMessage());
+        }
+    }
+
     public function getOne(int $id, array $criteria = []): ?FormEntity
     {
         return $this->crudManager->findOne(FormEntity::class, $id, $criteria + ['deleted' => false]);
@@ -53,10 +109,19 @@ class FormService
 
     public function getBySlug(string $slug): ?FormEntity
     {
-        return $this->crudManager->findOne(FormEntity::class, null, [
-            'slug' => $slug,
-            'deleted' => false
-        ]);
+        try {
+            $forms = $this->crudManager->findMany(
+                FormEntity::class,
+                [],
+                1,
+                1,
+                ['slug' => $slug, 'deleted' => false]
+            );
+            
+            return !empty($forms) ? $forms[0] : null;
+        } catch (CrudException $e) {
+            return null;
+        }
     }
 
     public function create(array $data, UserEntity $user): FormEntity
@@ -64,15 +129,24 @@ class FormService
         try {
             $form = new FormEntity();
             $form->setCreatedBy($user);
-            // Don't set organization - it's now nullable
-
-            // Generate slug if not provided
-            if (!array_key_exists('slug', $data)) {
-                $data['slug'] = $data['name'] ?? null;
+            
+            // Set organization if provided
+            if (!empty($data['organization_id'])) {
+                $organization = $this->crudManager->findOne(
+                    'App\Plugins\Organizations\Entity\OrganizationEntity',
+                    $data['organization_id']
+                );
+                if (!$organization) {
+                    throw new FormsException('Organization not found.');
+                }
+                $form->setOrganization($organization);
             }
 
-            if ($data['slug']) {
-                $data['slug'] = $this->slugService->generateSlug($data['slug']);
+            // Always generate slug from name
+            if (isset($data['name'])) {
+                $data['slug'] = $this->slugService->generateSlug($data['name']);
+            } else {
+                throw new FormsException('Form name is required.');
             }
             
             // Initialize with default fields if no fields provided
@@ -138,6 +212,23 @@ class FormService
     public function update(FormEntity $form, array $data): void
     {
         try {
+            // Auto-generate slug from name if name is being updated
+            if (isset($data['name']) && !isset($data['slug'])) {
+                $data['slug'] = $this->slugService->generateSlug($data['name']);
+            }
+            
+            // Update organization if provided
+            if (isset($data['organization_id'])) {
+                $organization = $this->crudManager->findOne(
+                    'App\Plugins\Organizations\Entity\OrganizationEntity',
+                    $data['organization_id']
+                );
+                if (!$organization) {
+                    throw new FormsException('Organization not found.');
+                }
+                $form->setOrganization($organization);
+            }
+            
             $constraints = [
                 'name' => [
                     new Assert\Length(['max' => 255])
@@ -206,14 +297,17 @@ class FormService
     public function attachToEvent(FormEntity $form, EventEntity $event): EventFormEntity
     {
         try {
-            // Check if already attached using repository
-            $eventFormRepository = $this->entityManager->getRepository(EventFormEntity::class);
-            
-            $existing = $eventFormRepository->findOneBy([
-                'event' => $event
-            ]);
+            // Check if already attached
+            $existingAttachments = $this->crudManager->findMany(
+                EventFormEntity::class,
+                [],
+                1,
+                1,
+                ['event' => $event]
+            );
 
-            if ($existing) {
+            if (!empty($existingAttachments)) {
+                $existing = $existingAttachments[0];
                 // Update existing attachment to use the new form
                 $existing->setForm($form);
                 $existing->setIsActive(true);
@@ -238,14 +332,16 @@ class FormService
     public function detachFromEvent(EventEntity $event): void
     {
         try {
-            $eventFormRepository = $this->entityManager->getRepository(EventFormEntity::class);
-            
-            $eventForm = $eventFormRepository->findOneBy([
-                'event' => $event,
-                'isActive' => true
-            ]);
+            $eventForms = $this->crudManager->findMany(
+                EventFormEntity::class,
+                [],
+                1,
+                1,
+                ['event' => $event, 'isActive' => true]
+            );
 
-            if ($eventForm) {
+            if (!empty($eventForms)) {
+                $eventForm = $eventForms[0];
                 $eventForm->setIsActive(false);
                 $this->entityManager->flush();
             }
@@ -257,14 +353,15 @@ class FormService
     public function getFormForEvent(EventEntity $event): ?FormEntity
     {
         try {
-            $eventFormRepository = $this->entityManager->getRepository(EventFormEntity::class);
+            $eventForms = $this->crudManager->findMany(
+                EventFormEntity::class,
+                [],
+                1,
+                1,
+                ['event' => $event, 'isActive' => true]
+            );
             
-            $eventForm = $eventFormRepository->findOneBy([
-                'event' => $event,
-                'isActive' => true
-            ]);
-            
-            return $eventForm ? $eventForm->getForm() : null;
+            return !empty($eventForms) ? $eventForms[0]->getForm() : null;
         } catch (\Exception $e) {
             throw new FormsException($e->getMessage());
         }

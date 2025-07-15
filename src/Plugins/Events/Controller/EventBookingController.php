@@ -389,7 +389,7 @@ class EventBookingController extends AbstractController
             }
             
             // Generate reschedule link - you'll need to adjust this based on your URL structure
-            $baseUrl = $_ENV['APP_URL'] ?? 'https://app.skedi.com';
+            $baseUrl = $_ENV['APP_URL'] ?? 'https://dev.skedi.com';
             $orgSlug = $organization ? $organization->getSlug() : '';
             $eventSlug = $event->getSlug();
             $rescheduleLink = $baseUrl . '/organizations/' . $orgSlug . '/events/' . $eventSlug . '/bookings/' . $booking->getId() . '/reschedule';
@@ -549,7 +549,7 @@ class EventBookingController extends AbstractController
             }
             
             // Generate calendar link (you can customize this based on your needs)
-            $baseUrl = $_ENV['APP_URL'] ?? 'https://app.skedi.com';
+            $baseUrl = $_ENV['APP_URL'] ?? 'https://dev.skedi.com';
             $calendarLink = $baseUrl . '/bookings/' . $booking->getId();
             
             // Get all assignees (hosts) for this event using the assignee service

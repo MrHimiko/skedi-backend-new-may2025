@@ -67,7 +67,7 @@ class EmailService
         
         // Add common data
         $data['app_name'] = $_ENV['APP_NAME'] ?? 'Skedi';
-        $data['app_url'] = $_ENV['APP_URL'] ?? 'https://app.skedi.com';
+        $data['app_url'] = $_ENV['APP_URL'] ?? 'https://dev.skedi.com';
         $data['current_year'] = date('Y');
         
         // Determine if we should queue or send immediately
@@ -156,7 +156,7 @@ class EmailService
         
         // Add common data
         $globalData['app_name'] = $_ENV['APP_NAME'] ?? 'Skedi';
-        $globalData['app_url'] = $_ENV['APP_URL'] ?? 'https://app.skedi.com';
+        $globalData['app_url'] = $_ENV['APP_URL'] ?? 'https://dev.skedi.com';
         $globalData['current_year'] = date('Y');
         
         return $this->provider->sendBulk($recipients, $template->getProviderId(), $globalData);
@@ -177,7 +177,7 @@ class EmailService
         
         // Add common data
         $data['app_name'] = $_ENV['APP_NAME'] ?? 'Skedi';
-        $data['app_url'] = $_ENV['APP_URL'] ?? 'https://app.skedi.com';
+        $data['app_url'] = $_ENV['APP_URL'] ?? 'https://dev.skedi.com';
         $data['current_year'] = date('Y');
         
         return [
