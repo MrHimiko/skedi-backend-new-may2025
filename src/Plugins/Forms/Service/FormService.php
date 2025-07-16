@@ -185,6 +185,11 @@ class FormService
                 ],
                 'requires_authentication' => [
                     new Assert\Type('bool')
+                ],
+                'organization_id' => [
+                    new Assert\NotBlank(['message' => 'Organization ID is required.']),
+                    new Assert\Type('integer'),
+                    new Assert\Positive(['message' => 'Organization ID must be a positive number.'])
                 ]
             ];
 

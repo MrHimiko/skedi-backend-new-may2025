@@ -18,6 +18,7 @@ use App\Plugins\Events\Entity\EventBookingEntity;
 use App\Plugins\Contacts\Entity\HostContactEntity;
 use App\Plugins\Contacts\Entity\ContactBookingEntity;
 use App\Plugins\Events\Entity\EventAssigneeEntity;
+use App\Plugins\PotentialLeads\Service\PotentialLeadService;
 
 class ContactService
 {
@@ -25,17 +26,20 @@ class ContactService
     private EntityManagerInterface $entityManager;
     private ContactRepository $contactRepository;
     private OrganizationContactRepository $organizationContactRepository;
+    private PotentialLeadService $potentialLeadService;
 
     public function __construct(
         CrudManager $crudManager,
         EntityManagerInterface $entityManager,
         ContactRepository $contactRepository,
-        OrganizationContactRepository $organizationContactRepository
+        OrganizationContactRepository $organizationContactRepository,
+        PotentialLeadService $potentialLeadService
     ) {
         $this->crudManager = $crudManager;
         $this->entityManager = $entityManager;
         $this->contactRepository = $contactRepository;
         $this->organizationContactRepository = $organizationContactRepository;
+        $this->potentialLeadService = $potentialLeadService;
     }
 
     public function getMany(OrganizationEntity $organization, array $filters, int $page, int $limit): array
@@ -509,6 +513,10 @@ class ContactService
 
         // Create host contacts for all event assignees
         $this->createHostContactsFromBooking($contact, $booking);
+
+        // Remove from potential leads if exists
+        $this->potentialLeadService->removePotentialLead($email, $organization);
+
 
         // Create contact booking record
         $this->createContactBooking($contact, $booking);

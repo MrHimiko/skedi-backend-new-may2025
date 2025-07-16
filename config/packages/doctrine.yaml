@@ -75,6 +75,13 @@ doctrine:
                 prefix: 'App\Plugins\Contacts\Entity'
                 alias: Contacts
 
+            PotentialLeads:
+                is_bundle: false
+                type: attribute
+                dir: '%kernel.project_dir%/src/Plugins/PotentialLeads/Entity'
+                prefix: 'App\Plugins\PotentialLeads\Entity'
+                alias: PotentialLeads
+
 
             Integrations:
                 is_bundle: false
