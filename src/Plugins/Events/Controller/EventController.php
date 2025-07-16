@@ -14,6 +14,9 @@ use App\Plugins\Organizations\Service\OrganizationService;
 use App\Plugins\Teams\Service\TeamService;
 use App\Plugins\Events\Entity\EventEntity;
 
+use DateTime;
+use DateTimeZone;
+use DateInterval;
 
 
 #[Route('/api')]
@@ -722,10 +725,95 @@ class EventController extends AbstractController
 
 
 
-
-
-
-
-
-
+    #[Route('/public/organizations/{org_slug}/events/{event_slug}/initial-load', name: 'public_event_initial_load', methods: ['GET'])]
+    public function getPublicEventInitialLoad(string $org_slug, string $event_slug, Request $request): JsonResponse
+    {
+        try {
+            // Get timezone and other parameters
+            $timezone = $request->query->get('timezone', 'UTC');
+            $bufferHours = $request->query->get('buffer_hours', 0);
+            $requestedDuration = $request->query->get('duration');
+            
+            // First, get the organization by slug
+            $organization = $this->organizationService->getBySlug($org_slug);
+            if (!$organization) {
+                return $this->responseService->json(false, 'Organization not found.', null, 404);
+            }
+            
+            // Get event by slug using the correct method signature
+            $event = $this->eventService->getEventBySlug($event_slug, null, $organization);
+            if (!$event || $event->isDeleted()) {
+                return $this->responseService->json(false, 'Event not found.', null, 404);
+            }
+            
+            // Build event data (same as getPublicEventInfo)
+            $eventData = $event->toArray();
+            $eventData['schedule'] = $event->getSchedule();
+            $eventData['location'] = $this->formatLocationForPublicApi($event->getLocation());
+            $eventData['available_locations'] = $this->getAvailableLocations($event);
+            
+            $formFields = $this->eventService->getFormFields($event);
+            $eventData['form_fields'] = array_map(function($field) {
+                return $field->toArray();
+            }, $formFields);
+            
+            $eventData['duration_options'] = $this->formatDurationOptions($event->getDuration());
+            $eventData['organization'] = [
+                'id' => $organization->getId(),
+                'name' => $organization->getName(),
+                'slug' => $organization->getSlug()
+            ];
+            
+            // Remove sensitive data
+            unset($eventData['created_by']);
+            
+            $eventData['metadata'] = [
+                'requires_form' => !empty($formFields),
+                'has_multiple_locations' => count($eventData['available_locations']) > 1,
+                'has_multiple_durations' => count($eventData['duration_options']) > 1,
+            ];
+            
+            // Now get available slots for today (or next available day)
+            $today = new \DateTime('now', new \DateTimeZone($timezone));
+            $duration = $requestedDuration ?: ($event->getDuration()[0]['duration'] ?? 30);
+            
+            // Find first available day (check up to 30 days)
+            $maxDaysToCheck = 30;
+            $availableSlots = [];
+            $selectedDate = null;
+            
+            for ($i = 0; $i < $maxDaysToCheck; $i++) {
+                $checkDate = clone $today;
+                $checkDate->add(new \DateInterval('P' . $i . 'D'));
+                
+                $slots = $this->scheduleService->getAvailableTimeSlots(
+                    $event,
+                    $checkDate,
+                    $duration,
+                    $timezone,
+                    $bufferHours
+                );
+                
+                if (!empty($slots)) {
+                    $selectedDate = $checkDate->format('Y-m-d');
+                    $availableSlots = $slots;
+                    break;
+                }
+            }
+            
+            // Return combined response
+            return $this->responseService->json(true, 'retrieve', [
+                'event' => $eventData,
+                'initial_slots' => [
+                    'date' => $selectedDate,
+                    'duration' => $duration,
+                    'timezone' => $timezone,
+                    'slots' => $availableSlots
+                ]
+            ]);
+            
+        } catch (\Exception $e) {
+            return $this->responseService->json(false, $e->getMessage(), null, 500);
+        }
+    }
 }
