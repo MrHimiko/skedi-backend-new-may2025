@@ -82,6 +82,13 @@ doctrine:
                 prefix: 'App\Plugins\PotentialLeads\Entity'
                 alias: PotentialLeads
 
+            Invitations:
+                is_bundle: false
+                type: attribute
+                dir: '%kernel.project_dir%/src/Plugins/Invitations/Entity'
+                prefix: 'App\Plugins\Invitations\Entity'
+                alias: Invitations
+
 
             Integrations:
                 is_bundle: false

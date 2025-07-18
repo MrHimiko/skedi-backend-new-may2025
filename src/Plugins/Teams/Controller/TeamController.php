@@ -333,4 +333,49 @@ class TeamController extends AbstractController
         $team->setDeleted(true);
         $this->entityManager->persist($team);
     }
+
+
+
+
+
+    #[Route('/teams/{team_id}/members', name: 'teams_get_members#', methods: ['GET'], requirements: ['organization_id' => '\d+', 'team_id' => '\d+'])]
+    public function getTeamMembers(int $organization_id, int $team_id, Request $request): JsonResponse
+    {
+        $user = $request->attributes->get('user');
+
+        try {
+            // Check if user has access to this organization
+            if (!$organization = $this->userOrganizationService->getOrganizationByUser($organization_id, $user)) {
+                return $this->responseService->json(false, 'Organization was not found.');
+            }
+            
+            // Get team
+            $team = $this->teamService->getOne($team_id);
+            if (!$team || $team->getOrganization()->getId() !== $organization_id) {
+                return $this->responseService->json(false, 'Team not found.');
+            }
+            
+            // Get team members
+            $members = $this->userTeamService->getMany([], 1, 1000, [
+                'team' => $team,
+                'deleted' => false
+            ]);
+            
+            $result = [];
+            foreach ($members as $member) {
+                $result[] = [
+                    'id' => $member->getId(),
+                    'user' => $member->getUser()->toArray(),
+                    'role' => $member->getRole(),
+                    'joined' => $member->getCreated()->format('Y-m-d H:i:s')
+                ];
+            }
+            
+            return $this->responseService->json(true, 'Team members retrieved successfully.', $result);
+        } catch (\Exception $e) {
+            return $this->responseService->json(false, 'Failed to retrieve team members.', null, 500);
+        }
+    }
+
+
 }

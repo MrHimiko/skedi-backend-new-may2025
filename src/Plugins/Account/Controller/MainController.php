@@ -18,6 +18,7 @@ use App\Plugins\Organizations\Service\OrganizationService;
 use App\Plugins\Organizations\Service\UserOrganizationService;
 use Symfony\Component\PasswordHasher\Hasher\UserPasswordHasherInterface;
 use App\Plugins\Teams\Service\TeamPermissionService;
+use App\Plugins\Invitations\Service\InvitationService;
 
 #[Route('/api/account')]
 class MainController extends AbstractController
@@ -33,6 +34,7 @@ class MainController extends AbstractController
     private UserOrganizationService $userOrganizationService;
     private UserPasswordHasherInterface $passwordHasher;
     private TeamPermissionService $permissionService;
+    private InvitationService $invitationService;
 
     public function __construct(
         ResponseService $responseService,
@@ -45,7 +47,8 @@ class MainController extends AbstractController
         EntityManagerInterface $entityManager,
         UserOrganizationService $userOrganizationService,
         UserPasswordHasherInterface $passwordHasher,
-        TeamPermissionService $permissionService
+        TeamPermissionService $permissionService,
+        InvitationService $invitationService
     ) {
         $this->responseService = $responseService;
         $this->loginService = $loginService;
@@ -58,6 +61,7 @@ class MainController extends AbstractController
         $this->userOrganizationService = $userOrganizationService;
         $this->passwordHasher = $passwordHasher;
         $this->permissionService = $permissionService;
+        $this->invitationService = $invitationService;
     }
 
 
@@ -212,9 +216,14 @@ class MainController extends AbstractController
             }, $teamEvents);
         }
 
+        // Get pending invitations count
+        $pendingInvitations = $this->invitationService->getPendingInvitationsByEmail($user->getEmail());
+        $pendingInvitationsCount = count($pendingInvitations);
+
         return $this->responseService->json(true, 'retrieve', $user->toArray() + [
             'organizations' => $organizations,
-            'teams' => $allTeams
+            'teams' => $allTeams,
+            'pending_invitations_count' => $pendingInvitationsCount
         ]);
     }
 

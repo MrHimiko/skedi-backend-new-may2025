@@ -22,10 +22,14 @@ contacts:
     resource: ../src/Plugins/Contacts/Controller/
     type: attribute
 
+
 PotentialLeads:
     resource: ../src/Plugins/PotentialLeads/Controller/
     type: attribute
 
+invitations:
+    resource: ../src/Plugins/Invitations/Controller/
+    type: attribute
 
 
 integrations:
