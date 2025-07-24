@@ -94,14 +94,20 @@ class InvitationService
         ]);
         
         if ($existingUser) {
-            // Check if already member of organization
-            if ($this->userOrganizationService->getOrganizationByUser($organization->getId(), $existingUser)) {
-                throw new InvitationsException('User is already a member of this organization.');
-            }
-            
-            // Check if already member of team
-            if ($team && $this->userTeamService->isUserInTeam($existingUser, $team)) {
-                throw new InvitationsException('User is already a member of this team.');
+            if ($team) {
+                // THIS IS A TEAM INVITATION
+                // Only check if user is already in THIS specific team
+                if ($this->userTeamService->isUserInTeam($existingUser, $team)) {
+                    throw new InvitationsException('User is already a member of this team.');
+                }
+                // Don't check organization membership for team invitations
+                // User might already be in org but not in this team, which is fine
+            } else {
+                // THIS IS AN ORGANIZATION INVITATION
+                // Check if user is already in organization
+                if ($this->userOrganizationService->getOrganizationByUser($organization->getId(), $existingUser)) {
+                    throw new InvitationsException('User is already a member of this organization.');
+                }
             }
         }
 
@@ -135,6 +141,7 @@ class InvitationService
 
         return $invitation;
     }
+
 
     /**
      * Send invitation email
@@ -228,6 +235,9 @@ class InvitationService
         // Determine organization role
         $invitationRole = $invitation->getTeam() ? 'member' : $invitation->getRole();
         $dbRole = isset($roleMapping[$invitationRole]) ? $roleMapping[$invitationRole] : 'user';
+        
+        // Map team role as well - THIS WAS THE MISSING PIECE!
+        $teamDbRole = isset($roleMapping[$invitation->getRole()]) ? $roleMapping[$invitation->getRole()] : 'user';
 
         // Determine what the user is being invited to
         $invitationType = $invitation->getTeam() ? 'team' : 'organization';
@@ -262,10 +272,10 @@ class InvitationService
         // Add user to team if specified - also using callback pattern
         if ($invitation->getTeam()) {
             try {
-                $this->userTeamService->create([], function($userTeam) use ($user, $invitation) {
+                $this->userTeamService->create([], function($userTeam) use ($user, $invitation, $teamDbRole) {
                     $userTeam->setUser($user);
                     $userTeam->setTeam($invitation->getTeam());
-                    $userTeam->setRole($invitation->getRole());
+                    $userTeam->setRole($teamDbRole); // <- FIXED: Now uses mapped role instead of raw role
                 });
             } catch (\App\Plugins\Teams\Exception\TeamsException $e) {
                 // If user is already in team
@@ -276,15 +286,15 @@ class InvitationService
                     $this->entityManager->flush();
                     
                     throw new InvitationsException("You are already a member of this {$invitationType}. The invitation has been removed.");
+                } else {
+                    throw $e;
                 }
-                throw $e;
             }
         }
 
-        // Update invitation status
+        // Mark invitation as accepted
         $invitation->setStatus('accepted');
         $invitation->setAcceptedAt(new \DateTime());
-        
         $this->entityManager->flush();
     }
 
