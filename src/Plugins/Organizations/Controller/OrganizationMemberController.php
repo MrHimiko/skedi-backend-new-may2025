@@ -57,15 +57,16 @@ class OrganizationMemberController extends AbstractController
 
             $result = [];
             foreach ($members as $member) {
+                $memberUser = $member->getUser();
                 $result[] = [
-                    'id' => $member->id,
+                    'id' => $member->getId(),
                     'user' => [
-                        'id' => $member->user->getId(),
-                        'name' => $member->user->getName(),
-                        'email' => $member->user->getEmail()
+                        'id' => $memberUser->getId(),
+                        'name' => $memberUser->getName(),
+                        'email' => $memberUser->getEmail()
                     ],
-                    'role' => $member->role,
-                    'joined' => $member->created->format('Y-m-d H:i:s')
+                    'role' => $member->getRole(),
+                    'joined' => $member->getCreated()->format('Y-m-d H:i:s')
                 ];
             }
 
@@ -74,6 +75,7 @@ class OrganizationMemberController extends AbstractController
             return $this->responseService->json(false, $e->getMessage(), null, 500);
         }
     }
+
 
     #[Route('/members/invite', name: 'organization_members_invite#', methods: ['POST'])]
     public function inviteMember(int $organization_id, Request $request): JsonResponse

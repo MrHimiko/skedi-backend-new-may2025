@@ -196,4 +196,34 @@ class UserOrganizationService
 
         return $organizations;
     }
+
+
+    /**
+     * Get all members of an organization
+     * 
+     */
+    public function getMembersByOrganization(int $organizationId): array
+    {
+        try {
+            // Use the existing getMany method with organization filter
+            $userOrganizations = $this->getMany([], 1, 1000, [
+                'organization' => $organizationId
+            ]);
+            
+            // Filter out deleted organizations
+            $members = [];
+            foreach ($userOrganizations as $userOrganization) {
+                $organization = $userOrganization->getOrganization();
+                
+                if (!$organization->isDeleted()) {
+                    $members[] = $userOrganization;
+                }
+            }
+            
+            return $members;
+        } catch (CrudException $e) {
+            throw new OrganizationsException($e->getMessage());
+        }
+    }
+
 }
