@@ -210,7 +210,7 @@ class UserOrganizationService
                 'organization' => $organizationId
             ]);
             
-            // Filter out deleted organizations
+            // Since the entity doesn't have a deleted field, check if the organization itself is deleted
             $members = [];
             foreach ($userOrganizations as $userOrganization) {
                 $organization = $userOrganization->getOrganization();

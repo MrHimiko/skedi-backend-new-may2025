@@ -378,4 +378,102 @@ class TeamController extends AbstractController
     }
 
 
+    #[Route('/teams/{team_id}/members/{member_id}', name: 'team_members_update#', methods: ['PUT'], requirements: ['team_id' => '\d+', 'member_id' => '\d+'])]
+    public function updateTeamMember(int $organization_id, int $team_id, int $member_id, Request $request): JsonResponse
+    {
+        $user = $request->attributes->get('user');
+        $data = $request->attributes->get('data');
+
+        try {
+            // Get team
+            $team = $this->teamService->getOne($team_id);
+            if (!$team || $team->getOrganization()->getId() !== $organization_id) {
+                return $this->responseService->json(false, 'Team not found.');
+            }
+
+            // Check if user has admin access
+            if (!$this->permissionService->hasAdminAccess($user, $team)) {
+                return $this->responseService->json(false, 'You do not have permission to update members.');
+            }
+
+            // Get member relationship
+            $member = $this->userTeamService->getOne($member_id);
+            if (!$member || $member->getTeam()->getId() !== $team_id) {
+                return $this->responseService->json(false, 'Member not found.');
+            }
+
+            // Update role if provided
+            if (isset($data['role']) && in_array($data['role'], ['admin', 'member'])) {
+                $member->setRole($data['role']);
+                $this->entityManager->persist($member);
+                $this->entityManager->flush();
+            }
+
+            return $this->responseService->json(true, 'Member updated successfully.');
+        } catch (\Exception $e) {
+            return $this->responseService->json(false, $e->getMessage(), null, 500);
+        }
+    }
+
+    #[Route('/teams/{team_id}/members/{member_id}', name: 'team_members_remove#', methods: ['DELETE'], requirements: ['team_id' => '\d+', 'member_id' => '\d+'])]
+    public function removeTeamMember(int $organization_id, int $team_id, int $member_id, Request $request): JsonResponse
+    {
+        $user = $request->attributes->get('user');
+
+        try {
+            // Get team
+            $team = $this->teamService->getOne($team_id);
+            if (!$team || $team->getOrganization()->getId() !== $organization_id) {
+                return $this->responseService->json(false, 'Team not found.');
+            }
+
+            // Check if user has admin access
+            if (!$this->permissionService->hasAdminAccess($user, $team)) {
+                return $this->responseService->json(false, 'You do not have permission to remove members.');
+            }
+
+            // Get member relationship
+            $member = $this->userTeamService->getOne($member_id);
+            if (!$member || $member->getTeam()->getId() !== $team_id) {
+                return $this->responseService->json(false, 'Member not found.');
+            }
+
+            // Remove member
+            $this->userTeamService->delete($member);
+
+            return $this->responseService->json(true, 'Member removed successfully.');
+        } catch (\Exception $e) {
+            return $this->responseService->json(false, $e->getMessage(), null, 500);
+        }
+    }
+
+    #[Route('/teams/{team_id}/members/leave', name: 'team_leave#', methods: ['POST'], requirements: ['team_id' => '\d+'])]
+    public function leaveTeam(int $organization_id, int $team_id, Request $request): JsonResponse
+    {
+        $user = $request->attributes->get('user');
+
+        try {
+            // Get team
+            $team = $this->teamService->getOne($team_id);
+            if (!$team || $team->getOrganization()->getId() !== $organization_id) {
+                return $this->responseService->json(false, 'Team not found.');
+            }
+
+            // Check if user is member of this team
+            $userTeam = $this->userTeamService->isUserInTeam($user, $team);
+            if (!$userTeam) {
+                return $this->responseService->json(false, 'You are not a member of this team.');
+            }
+
+            // Remove user from team (no admin check needed for teams)
+            $this->userTeamService->delete($userTeam);
+
+            return $this->responseService->json(true, 'Successfully left the team.');
+        } catch (\Exception $e) {
+            return $this->responseService->json(false, $e->getMessage(), null, 500);
+        }
+    }
+
+
+
 }

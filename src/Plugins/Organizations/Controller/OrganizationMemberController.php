@@ -9,6 +9,7 @@ use Symfony\Component\HttpFoundation\Request;
 use App\Service\ResponseService;
 use App\Plugins\Organizations\Service\OrganizationService;
 use App\Plugins\Organizations\Service\UserOrganizationService;
+use App\Plugins\Organizations\Entity\UserOrganizationEntity;
 use App\Plugins\Account\Service\UserService;
 use App\Plugins\Email\Service\EmailService;
 use App\Plugins\Organizations\Exception\OrganizationsException;
@@ -66,7 +67,8 @@ class OrganizationMemberController extends AbstractController
                         'email' => $memberUser->getEmail()
                     ],
                     'role' => $member->getRole(),
-                    'joined' => $member->getCreated()->format('Y-m-d H:i:s')
+                    'joined' => $member->getCreated()->format('Y-m-d H:i:s'),
+                    'is_creator' => $this->isOrganizationCreator($member)
                 ];
             }
 
@@ -75,7 +77,6 @@ class OrganizationMemberController extends AbstractController
             return $this->responseService->json(false, $e->getMessage(), null, 500);
         }
     }
-
 
     #[Route('/members/invite', name: 'organization_members_invite#', methods: ['POST'])]
     public function inviteMember(int $organization_id, Request $request): JsonResponse
@@ -111,7 +112,11 @@ class OrganizationMemberController extends AbstractController
                 }
 
                 // Add existing user to organization
-                $this->userOrganizationService->create($invitedUser, $organization, $data['role'] ?? 'member');
+                $this->userOrganizationService->create([], function($userOrg) use ($invitedUser, $organization, $data) {
+                    $userOrg->setUser($invitedUser);
+                    $userOrg->setOrganization($organization);
+                    $userOrg->setRole($data['role'] ?? 'member');
+                });
                 
                 // Send notification email
                 $this->emailService->send(
@@ -149,14 +154,14 @@ class OrganizationMemberController extends AbstractController
             }
 
             // Get the member relationship
-            $member = $this->userOrganizationService->getById($member_id);
-            if (!$member || $member->organization->getId() !== $organization_id) {
+            $member = $this->userOrganizationService->getOne($member_id);
+            if (!$member || $member->getOrganization()->getId() !== $organization_id) {
                 return $this->responseService->json(false, 'Member not found.');
             }
 
             // Update role if provided
             if (isset($data['role']) && in_array($data['role'], ['admin', 'member'])) {
-                $member->role = $data['role'];
+                $member->setRole($data['role']);
                 $this->entityManager->persist($member);
                 $this->entityManager->flush();
             }
@@ -180,23 +185,195 @@ class OrganizationMemberController extends AbstractController
             }
 
             // Get the member relationship
-            $member = $this->userOrganizationService->getById($member_id);
-            if (!$member || $member->organization->getId() !== $organization_id) {
+            $member = $this->userOrganizationService->getOne($member_id);
+            if (!$member || $member->getOrganization()->getId() !== $organization_id) {
                 return $this->responseService->json(false, 'Member not found.');
             }
 
-            // Prevent removing the organization creator
-            $organization = $this->organizationService->getOne($organization_id);
-            if ($member->user->getId() === $organization->getCreatedBy()->getId()) {
-                return $this->responseService->json(false, 'Cannot remove the organization creator.');
+            // Check if this member is the organization creator (first admin)
+            if ($this->isOrganizationCreator($member)) {
+                return $this->responseService->json(false, 'Cannot remove the organization creator. The creator can only leave voluntarily.');
             }
 
             // Remove member
-            $this->userOrganizationService->delete($member);
+            $this->userOrganizationService->delete($member, true);
 
             return $this->responseService->json(true, 'Member removed successfully.');
         } catch (\Exception $e) {
             return $this->responseService->json(false, $e->getMessage(), null, 500);
         }
     }
+
+    #[Route('/leave', name: 'organization_leave#', methods: ['POST'])]
+    public function leaveOrganization(int $organization_id, Request $request): JsonResponse
+    {
+        $user = $request->attributes->get('user');
+
+        try {
+            // Check if user is member of this organization
+            $userOrg = $this->userOrganizationService->getOrganizationByUser($organization_id, $user);
+            if (!$userOrg) {
+                return $this->responseService->json(false, 'You are not a member of this organization.');
+            }
+
+            // Get the member relationship entity
+            $memberRelation = $this->userOrganizationService->isUserInOrganization($user, $userOrg->entity);
+            if (!$memberRelation) {
+                return $this->responseService->json(false, 'Member relationship not found.');
+            }
+
+            // If user is admin, check if there are other admins
+            if ($userOrg->role === 'admin') {
+                // Count other admins in the organization
+                $allMembers = $this->userOrganizationService->getMembersByOrganization($organization_id);
+                $adminCount = 0;
+                
+                foreach ($allMembers as $member) {
+                    if ($member->getRole() === 'admin' && $member->getUser()->getId() !== $user->getId()) {
+                        $adminCount++;
+                    }
+                }
+                
+                if ($adminCount === 0) {
+                    return $this->responseService->json(
+                        false, 
+                        'You cannot leave this organization as you are the only admin. Please assign another admin first.'
+                    );
+                }
+            }
+
+            // Remove the user from organization
+            $this->userOrganizationService->delete($memberRelation, true);
+
+            return $this->responseService->json(true, 'Successfully left the organization.');
+        } catch (\Exception $e) {
+            return $this->responseService->json(false, $e->getMessage(), null, 500);
+        }
+    }
+    
+    /**
+     * Check if a user is the organization creator (first admin)
+     * The creator is identified as the user with the earliest created timestamp
+     */
+    private function isOrganizationCreator($userOrganization): bool
+    {
+        // Get all members of the organization using CrudManager
+        $allMembers = $this->userOrganizationService->getMany(
+            [], 
+            1,  
+            1000, 
+            ['organization' => $userOrganization->getOrganization()]
+        );
+        
+        // Sort by created date (oldest first)
+        usort($allMembers, function($a, $b) {
+            return $a->getCreated()->getTimestamp() - $b->getCreated()->getTimestamp();
+        });
+        
+        // The first member (oldest created date) is considered the creator
+        if (!empty($allMembers) && $allMembers[0]->getId() === $userOrganization->getId()) {
+            return true;
+        }
+        
+        return false;
+    }
+
+
+    #[Route('/teams/{team_id}/members/{member_id}', name: 'team_members_update#', methods: ['PUT'], requirements: ['team_id' => '\d+', 'member_id' => '\d+'])]
+    public function updateTeamMember(int $organization_id, int $team_id, int $member_id, Request $request): JsonResponse
+    {
+        $user = $request->attributes->get('user');
+        $data = $request->attributes->get('data');
+
+        try {
+            // Get team
+            $team = $this->teamService->getOne($team_id);
+            if (!$team || $team->getOrganization()->getId() !== $organization_id) {
+                return $this->responseService->json(false, 'Team not found.');
+            }
+
+            // Check if user has admin access
+            if (!$this->permissionService->hasAdminAccess($user, $team)) {
+                return $this->responseService->json(false, 'You do not have permission to update members.');
+            }
+
+            // Get member relationship
+            $member = $this->userTeamService->getOne($member_id);
+            if (!$member || $member->getTeam()->getId() !== $team_id) {
+                return $this->responseService->json(false, 'Member not found.');
+            }
+
+            // Update role if provided
+            if (isset($data['role']) && in_array($data['role'], ['admin', 'member'])) {
+                $member->setRole($data['role']);
+                $this->entityManager->persist($member);
+                $this->entityManager->flush();
+            }
+
+            return $this->responseService->json(true, 'Member updated successfully.');
+        } catch (\Exception $e) {
+            return $this->responseService->json(false, $e->getMessage(), null, 500);
+        }
+    }
+
+    #[Route('/teams/{team_id}/members/{member_id}', name: 'team_members_remove#', methods: ['DELETE'], requirements: ['team_id' => '\d+', 'member_id' => '\d+'])]
+    public function removeTeamMember(int $organization_id, int $team_id, int $member_id, Request $request): JsonResponse
+    {
+        $user = $request->attributes->get('user');
+
+        try {
+            // Get team
+            $team = $this->teamService->getOne($team_id);
+            if (!$team || $team->getOrganization()->getId() !== $organization_id) {
+                return $this->responseService->json(false, 'Team not found.');
+            }
+
+            // Check if user has admin access
+            if (!$this->permissionService->hasAdminAccess($user, $team)) {
+                return $this->responseService->json(false, 'You do not have permission to remove members.');
+            }
+
+            // Get member relationship
+            $member = $this->userTeamService->getOne($member_id);
+            if (!$member || $member->getTeam()->getId() !== $team_id) {
+                return $this->responseService->json(false, 'Member not found.');
+            }
+
+            // Remove member
+            $this->userTeamService->delete($member);
+
+            return $this->responseService->json(true, 'Member removed successfully.');
+        } catch (\Exception $e) {
+            return $this->responseService->json(false, $e->getMessage(), null, 500);
+        }
+    }
+
+    #[Route('/teams/{team_id}/members/leave', name: 'team_leave#', methods: ['POST'], requirements: ['team_id' => '\d+'])]
+    public function leaveTeam(int $organization_id, int $team_id, Request $request): JsonResponse
+    {
+        $user = $request->attributes->get('user');
+
+        try {
+            // Get team
+            $team = $this->teamService->getOne($team_id);
+            if (!$team || $team->getOrganization()->getId() !== $organization_id) {
+                return $this->responseService->json(false, 'Team not found.');
+            }
+
+            // Check if user is member of this team
+            $userTeam = $this->userTeamService->isUserInTeam($user, $team);
+            if (!$userTeam) {
+                return $this->responseService->json(false, 'You are not a member of this team.');
+            }
+
+            // Remove user from team (no admin check needed for teams)
+            $this->userTeamService->delete($userTeam);
+
+            return $this->responseService->json(true, 'Successfully left the team.');
+        } catch (\Exception $e) {
+            return $this->responseService->json(false, $e->getMessage(), null, 500);
+        }
+    }
+
+
 }
