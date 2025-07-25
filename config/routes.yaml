@@ -35,7 +35,6 @@ billing:
     resource: ../src/Plugins/Billing/Controller/
     type: attribute
 
-
 integrations:
     resource: ../src/Plugins/Integrations/Common/Controller/
     type: attribute

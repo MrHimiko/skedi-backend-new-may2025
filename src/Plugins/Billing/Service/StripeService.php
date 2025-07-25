@@ -50,6 +50,12 @@ class StripeService
             'metadata' => [
                 'organization_id' => $organization->getId(),
                 'plan_id' => $plan->getId(),
+            ],
+            'subscription_data' => [
+                'metadata' => [
+                    'organization_id' => $organization->getId(),
+                    'plan_id' => $plan->getId(),
+                ]
             ]
         ]);
         

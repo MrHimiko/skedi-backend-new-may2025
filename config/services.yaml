@@ -96,6 +96,19 @@ services:
             $logRepository: '@App\Plugins\Email\Repository\EmailLogRepository'
             $crudManager: '@App\Service\CrudManager'
 
+    App\Plugins\Billing\Service\StripeWebhookService:
+            arguments:
+                - '%env(STRIPE_SECRET_KEY)%'
+                - '%env(STRIPE_WEBHOOK_SECRET)%'
+                - '@doctrine.orm.entity_manager'
+                - '@App\Plugins\Organizations\Service\OrganizationService'
+                - '@App\Plugins\Billing\Repository\BillingPlanRepository'
+        
+    App\Plugins\Billing\Controller\StripeWebhookController:
+        arguments:
+            - '@App\Plugins\Billing\Service\StripeWebhookService'
+        tags: ['controller.service_arguments']
+
 
     App\Plugins\Billing\Service\BillingService:
         arguments:
@@ -117,7 +130,4 @@ services:
             - '@App\Plugins\Organizations\Service\OrganizationService'
             - '@App\Plugins\Organizations\Service\UserOrganizationService'
         tags: ['controller.service_arguments']
-        
 
-    # add more service definitions when explicit configuration is needed
-    # please note that last definitions always *replace* previous ones

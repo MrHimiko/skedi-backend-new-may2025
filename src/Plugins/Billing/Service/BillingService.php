@@ -79,7 +79,7 @@ class BillingService
         return $result['total'] ?? 0;
     }
 
-    public function getPlanBySlug(string $slug): ?BillingPlanEntity
+    public function getPlanBySlug(string $slug): ?\App\Plugins\Billing\Entity\BillingPlanEntity
     {
         return $this->planRepository->findOneBy(['slug' => $slug]);
     }
