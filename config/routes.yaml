@@ -31,6 +31,10 @@ invitations:
     resource: ../src/Plugins/Invitations/Controller/
     type: attribute
 
+billing:
+    resource: ../src/Plugins/Billing/Controller/
+    type: attribute
+
 
 integrations:
     resource: ../src/Plugins/Integrations/Common/Controller/

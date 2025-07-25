@@ -96,5 +96,28 @@ services:
             $logRepository: '@App\Plugins\Email\Repository\EmailLogRepository'
             $crudManager: '@App\Service\CrudManager'
 
+
+    App\Plugins\Billing\Service\BillingService:
+        arguments:
+            - '@App\Service\CrudManager'
+            - '@App\Plugins\Billing\Repository\BillingPlanRepository'
+            - '@App\Plugins\Billing\Repository\OrganizationSubscriptionRepository'
+    
+    App\Plugins\Billing\Service\StripeService:
+        arguments:
+            - '%env(STRIPE_SECRET_KEY)%'
+            - '@doctrine.orm.entity_manager'
+            - '%env(STRIPE_ADDITIONAL_SEATS_PRICE_ID)%'
+    
+    App\Plugins\Billing\Controller\BillingController:
+        arguments:
+            - '@App\Service\ResponseService'
+            - '@App\Plugins\Billing\Service\BillingService'
+            - '@App\Plugins\Billing\Service\StripeService'
+            - '@App\Plugins\Organizations\Service\OrganizationService'
+            - '@App\Plugins\Organizations\Service\UserOrganizationService'
+        tags: ['controller.service_arguments']
+        
+
     # add more service definitions when explicit configuration is needed
     # please note that last definitions always *replace* previous ones
