@@ -14,6 +14,8 @@ use App\Plugins\Account\Service\UserService;
 use App\Plugins\Email\Service\EmailService;
 use App\Plugins\Organizations\Exception\OrganizationsException;
 use Doctrine\ORM\EntityManagerInterface;
+use App\Plugins\Account\Repository\UserRepository;
+
 
 #[Route('/api/organizations/{organization_id}', requirements: ['organization_id' => '\d+'])]
 class OrganizationMemberController extends AbstractController
@@ -24,6 +26,7 @@ class OrganizationMemberController extends AbstractController
     private UserService $userService;
     private EmailService $emailService;
     private EntityManagerInterface $entityManager;
+    private UserRepository $userRepository;
 
     public function __construct(
         ResponseService $responseService,
@@ -31,7 +34,8 @@ class OrganizationMemberController extends AbstractController
         UserOrganizationService $userOrganizationService,
         UserService $userService,
         EmailService $emailService,
-        EntityManagerInterface $entityManager
+        EntityManagerInterface $entityManager,
+        UserRepository $userRepository,
     ) {
         $this->responseService = $responseService;
         $this->organizationService = $organizationService;
@@ -39,6 +43,7 @@ class OrganizationMemberController extends AbstractController
         $this->userService = $userService;
         $this->emailService = $emailService;
         $this->entityManager = $entityManager;
+        $this->userRepository = $userRepository;
     }
 
     #[Route('/members', name: 'organization_members_list#', methods: ['GET'])]
@@ -102,7 +107,7 @@ class OrganizationMemberController extends AbstractController
             }
 
             // Check if user with this email exists
-            $invitedUser = $this->userService->getByEmail($data['email']);
+            $invitedUser = $this->userRepository->findOneBy(['email' => $data['email']]);
             
             if ($invitedUser) {
                 // Check if user is already a member
@@ -121,19 +126,86 @@ class OrganizationMemberController extends AbstractController
                 // Send notification email
                 $this->emailService->send(
                     $invitedUser->getEmail(),
-                    'Organization Invitation',
-                    'You have been added to the organization: ' . $organization->getName()
+                    'invitation',  
+                    [
+                        // Target details
+                        'target_name' => $organization->getName(),
+                        'target_type' => 'organization',
+                        'is_team_invitation' => false,
+                        'organization_name' => $organization->getName(),
+                        'team_name' => null,
+                        
+                        // Role info
+                        'role' => $data['role'] ?? 'member',
+                        'role_display' => ucfirst($data['role'] ?? 'member'),
+                        'article' => ($data['role'] ?? 'member') === 'admin' ? 'an' : 'a',
+                        
+                        // Inviter info
+                        'inviter_name' => $user->getName(),
+                        'inviter_email' => $user->getEmail(),
+                        
+                        // User status
+                        'existing_user' => true,  
+                        'invitee_name' => $invitedUser->getName(),
+                        
+                    ]
                 );
-            } else {
-                // Create invitation for new user
-                // This would require an invitation system - for now, we'll return a message
+            }else {
+
+                $existingInvitation = $this->invitationService->getRepository()->findOneBy([
+                    'email' => $data['email'],
+                    'organization' => $organization,
+                    'status' => 'pending'
+                ]);
+                
+                if ($existingInvitation) {
+                    return $this->responseService->json(false, 'An invitation has already been sent to this email.');
+                }
+                
+                // Create invitation using the invitation service
+                $invitation = $this->invitationService->sendInvitation(
+                    $data['email'],
+                    $user,  
+                    $organization,
+                    null,   
+                    $data['role'] ?? 'member'
+                );
+                
+                // Send email notification
+                $this->emailService->send(
+                    $data['email'],
+                    'invitation',
+                    [
+                        // Target details
+                        'target_name' => $organization->getName(),
+                        'target_type' => 'organization',
+                        'is_team_invitation' => false,
+                        'organization_name' => $organization->getName(),
+                        'team_name' => null,
+                        
+                        // Role info
+                        'role' => $data['role'] ?? 'member',
+                        'role_display' => ucfirst($data['role'] ?? 'member'),
+                        'article' => ($data['role'] ?? 'member') === 'admin' ? 'an' : 'a',
+                        
+                        // Inviter info
+                        'inviter_name' => $user->getName(),
+                        'inviter_email' => $user->getEmail(),
+                        
+                        // User status
+                        'existing_user' => false,
+                        'invitee_name' => 'there',
+                        
+
+                    ]
+                );
+                
                 return $this->responseService->json(
                     true, 
-                    'User not found. Please ask them to create an account first.',
-                    ['email' => $data['email']]
+                    'Invitation sent successfully!',
+                    ['email' => $data['email'], 'invitation_id' => $invitation->getId()]
                 );
             }
-
             return $this->responseService->json(true, 'Member added successfully.');
         } catch (\Exception $e) {
             return $this->responseService->json(false, $e->getMessage(), null, 500);

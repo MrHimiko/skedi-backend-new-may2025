@@ -51,7 +51,7 @@ class BillingController extends AbstractController
                 return $this->responseService->json(false, 'Organization not found', null, 404);
             }
             
-            if (!$this->userOrganizationService->getOrganizationByUser($organizationId, $user)) {
+            if (!$this->userOrganizationService->getOrganizationByUser($organization_id, $user)) {
                 return $this->responseService->json(false, 'Access denied', null, 403);
             }
             
@@ -159,7 +159,7 @@ class BillingController extends AbstractController
                 return $this->responseService->json(false, 'Organization not found', null, 404);
             }
             
-            if (!$this->userOrganizationService->getOrganizationByUser($organization_id, $user)) {
+            if (!$this->userOrganizationService->getOrganizationByUser($organizationId, $user)) {
                 return $this->responseService->json(false, 'Access denied', null, 403);
             }
             

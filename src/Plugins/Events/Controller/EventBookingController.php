@@ -439,12 +439,11 @@ class EventBookingController extends AbstractController
                 [
                     // Guest info
                     'guest_name' => $guestName,
-                    
-                    // Meeting details - these MUST match your SendGrid template variables exactly
+
                     'meeting_name' => $event->getName(),
                     'meeting_date' => $startTime->format('F j, Y'),
                     'meeting_time' => $startTime->format('g:i A'),
-                    'meeting_duration' => $duration,  // SendGrid might expect just the number
+                    'meeting_duration' => $duration,  
                     'meeting_location' => $location,
                     'meeting_link' => $meetingLink,
                     
@@ -466,15 +465,7 @@ class EventBookingController extends AbstractController
             // Log error but don't fail the booking
             error_log('Failed to send booking confirmation email: ' . $e->getMessage());
             
-            // Optionally log more details for debugging
-            if ($_ENV['APP_DEBUG'] ?? false) {
-                error_log('Email data: ' . json_encode([
-                    'to' => $guestEmail ?? 'unknown',
-                    'template' => 'meeting_scheduled',
-                    'error' => $e->getMessage(),
-                    'trace' => $e->getTraceAsString()
-                ]));
-            }
+
         }
     }
 

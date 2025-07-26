@@ -229,15 +229,15 @@ class InvitationService
         // Map our role names to what the database expects
         $roleMapping = [
             'admin' => 'admin',
-            'member' => 'user'  // 'member' in our system is 'user' in the database
+            'member' => 'member'  
         ];
         
         // Determine organization role
         $invitationRole = $invitation->getTeam() ? 'member' : $invitation->getRole();
-        $dbRole = isset($roleMapping[$invitationRole]) ? $roleMapping[$invitationRole] : 'user';
+        $dbRole = isset($roleMapping[$invitationRole]) ? $roleMapping[$invitationRole] : 'member';
         
         // Map team role as well - THIS WAS THE MISSING PIECE!
-        $teamDbRole = isset($roleMapping[$invitation->getRole()]) ? $roleMapping[$invitation->getRole()] : 'user';
+        $teamDbRole = isset($roleMapping[$invitation->getRole()]) ? $roleMapping[$invitation->getRole()] : 'member';
 
         // Determine what the user is being invited to
         $invitationType = $invitation->getTeam() ? 'team' : 'organization';

@@ -133,6 +133,16 @@ class EmailTemplateService
                     'guest_message' => ''
                 ],
                 'required_fields' => ['meeting_name', 'date', 'time', 'duration']
+            ],
+            [
+                'name' => 'invitation',
+                'provider_id' => 'd-256b80c62d7743dfa9fc5c6726856993',
+                'description' => 'Sent when user is invited to organization or team',
+                'default_data' => [
+                    'organization_name' => '',
+                    'inviter_name' => ''
+                ],
+                'required_fields' => ['organization_name', 'email']
             ]
         ];
         

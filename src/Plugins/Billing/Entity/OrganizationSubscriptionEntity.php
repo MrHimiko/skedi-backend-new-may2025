@@ -102,6 +102,22 @@ class OrganizationSubscriptionEntity
         return $this;
     }
 
+    public function getStatus(): string
+    {
+        return $this->status;
+    }
+
+    public function setStatus(string $status): self
+    {
+        $this->status = $status;
+        return $this;
+    }
+
+    public function isActive(): bool
+    {
+        return $this->status === 'active';
+    }
+
     public function getAdditionalSeats(): int
     {
         return $this->additionalSeats;
@@ -113,30 +129,45 @@ class OrganizationSubscriptionEntity
         return $this;
     }
 
+    public function getCurrentPeriodStart(): ?\DateTime
+    {
+        return $this->currentPeriodStart;
+    }
+
+    public function setCurrentPeriodStart(?\DateTime $currentPeriodStart): self
+    {
+        $this->currentPeriodStart = $currentPeriodStart;
+        return $this;
+    }
+
+    public function getCurrentPeriodEnd(): ?\DateTime
+    {
+        return $this->currentPeriodEnd;
+    }
+
+    public function setCurrentPeriodEnd(?\DateTime $currentPeriodEnd): self
+    {
+        $this->currentPeriodEnd = $currentPeriodEnd;
+        return $this;
+    }
+
     public function getTotalSeats(): int
     {
         return $this->plan->getIncludedSeats() + $this->additionalSeats;
-    }
-
-    public function isActive(): bool
-    {
-        return in_array($this->status, ['active', 'trialing']);
-    }
-
-    public function setStatus(string $status): self
-    {
-        $this->status = $status;
-        return $this;
     }
 
     public function toArray(): array
     {
         return [
             'id' => $this->id,
+            'organization_id' => $this->organization->getId(),
             'plan' => $this->plan->toArray(),
             'status' => $this->status,
             'additional_seats' => $this->additionalSeats,
             'total_seats' => $this->getTotalSeats(),
+            'current_period_start' => $this->currentPeriodStart?->format('Y-m-d H:i:s'),
+            'current_period_end' => $this->currentPeriodEnd?->format('Y-m-d H:i:s'),
+            'created_at' => $this->createdAt->format('Y-m-d H:i:s'),
         ];
     }
 }
