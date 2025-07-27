@@ -93,7 +93,7 @@ class GoogleMeetService
         
         // Standard OAuth parameters
         $client->setAccessType('offline');
-        $client->setPrompt('consent');
+        $client->setApprovalPrompt('force');
         $client->setIncludeGrantedScopes(true);
         
         // Handle existing tokens if integration provided
@@ -126,7 +126,7 @@ class GoogleMeetService
         $client->setClientSecret($clientSecret);
         $client->setRedirectUri($redirectUri);
         $client->setAccessType('offline');
-        $client->setPrompt('consent');
+        $client->setApprovalPrompt('force');
         $client->setIncludeGrantedScopes(true);
         
         // Include userinfo.email scope and meet-specific scopes
@@ -160,7 +160,7 @@ class GoogleMeetService
             $client->setClientSecret($clientSecret);
             $client->setRedirectUri($redirectUri);
             $client->setAccessType('offline');
-            $client->setPrompt('consent');
+            $client->setApprovalPrompt('force');
             
             // Set scopes same as in getAuthUrl
             $client->setScopes([
