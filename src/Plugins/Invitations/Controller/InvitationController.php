@@ -14,6 +14,7 @@ use App\Plugins\Organizations\Service\UserOrganizationService;
 use App\Plugins\Teams\Service\TeamService;
 use App\Plugins\Teams\Service\UserTeamService;
 use App\Plugins\Teams\Service\TeamPermissionService;
+use Doctrine\ORM\EntityManagerInterface;
 
 #[Route('/api')]
 class InvitationController extends AbstractController
@@ -25,6 +26,7 @@ class InvitationController extends AbstractController
     private TeamService $teamService;
     private UserTeamService $userTeamService;
     private TeamPermissionService $permissionService;
+    private EntityManagerInterface $entityManager;
 
     public function __construct(
         ResponseService $responseService,
@@ -33,6 +35,7 @@ class InvitationController extends AbstractController
         UserOrganizationService $userOrganizationService,
         TeamService $teamService,
         UserTeamService $userTeamService,
+        EntityManagerInterface $entityManager,
         TeamPermissionService $permissionService
     ) {
         $this->responseService = $responseService;
@@ -41,6 +44,7 @@ class InvitationController extends AbstractController
         $this->userOrganizationService = $userOrganizationService;
         $this->teamService = $teamService;
         $this->userTeamService = $userTeamService;
+        $this->entityManager = $entityManager;
         $this->permissionService = $permissionService;
     }
 
@@ -214,21 +218,26 @@ class InvitationController extends AbstractController
 
         try {
             $invitation = $this->invitationService->getOne($id);
+            
             if (!$invitation) {
                 return $this->responseService->json(false, 'Invitation not found.');
             }
-
+            
             if ($invitation->getEmail() !== $user->getEmail()) {
                 return $this->responseService->json(false, 'You cannot decline this invitation.');
             }
-
-            $this->invitationService->declineInvitation($invitation);
+            
+            // Instead of using the service method, update directly
+            $invitation->setStatus('declined');
+            $this->entityManager->persist($invitation);
+            $this->entityManager->flush();
 
             return $this->responseService->json(true, 'Invitation declined.');
         } catch (\Exception $e) {
-            return $this->responseService->json(false, 'Failed to decline invitation.', null, 500);
+            return $this->responseService->json(false, 'Failed to decline invitation: ' . $e->getMessage(), null, 500);
         }
     }
+
 
     #[Route('/invitations/{id}/resend', name: 'invitations_resend#', methods: ['POST'], requirements: ['id' => '\d+'])]
     public function resendInvitation(int $id, Request $request): JsonResponse
