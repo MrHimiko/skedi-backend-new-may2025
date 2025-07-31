@@ -204,4 +204,93 @@ class BillingController extends AbstractController
             return $this->responseService->json(false, $e->getMessage(), null, 500);
         }
     }
+
+
+    #[Route('/organizations/{organization_id}/seats', name: 'billing_purchase_seats#', methods: ['POST'])]
+    public function purchaseSeats(int $organization_id, Request $request): JsonResponse
+    {
+        $user = $request->attributes->get('user');
+        $data = $request->attributes->get('data');
+        
+        try {
+            $organization = $this->organizationService->getOne($organization_id);
+            if (!$organization) {
+                return $this->responseService->json(false, 'Organization not found', null, 404);
+            }
+            
+            // Check admin access
+            $userOrg = $this->userOrganizationService->getOrganizationByUser($organization_id, $user);
+            if (!$userOrg || $userOrg->role !== 'admin') {
+                return $this->responseService->json(false, 'Admin access required', null, 403);
+            }
+            
+            // Validate seats input
+            $seatsToAdd = (int) ($data['seats'] ?? 0);
+            if ($seatsToAdd <= 0 || $seatsToAdd > 100) {
+                return $this->responseService->json(false, 'Invalid number of seats. Must be between 1 and 100.', null, 400);
+            }
+            
+            // Get current subscription
+            $subscription = $this->billingService->getOrganizationSubscription($organization);
+            
+            if (!$subscription || !$subscription->isActive()) {
+                // No active subscription - create new subscription with seats
+                // First, they need a plan
+                return $this->responseService->json(
+                    false, 
+                    'Please select a subscription plan first before adding seats.', 
+                    ['requires_plan' => true],
+                    400
+                );
+            }
+            
+            // Check if immediate purchase or Stripe checkout
+            if ($subscription->getStripeCustomerId()) {
+                // Existing customer - update subscription directly
+                try {
+                    $this->stripeService->addSeats($subscription, $seatsToAdd);
+                    
+                    return $this->responseService->json(true, 'Seats added successfully', [
+                        'new_total_seats' => $subscription->getTotalSeats(),
+                        'seats_added' => $seatsToAdd
+                    ]);
+                } catch (\Exception $e) {
+                    // If direct update fails, fall back to checkout
+                    $checkoutUrl = $this->stripeService->createSeatsCheckoutSession($subscription, $seatsToAdd);
+                    
+                    return $this->responseService->json(true, 'Redirecting to checkout', [
+                        'checkout_url' => $checkoutUrl
+                    ]);
+                }
+            } else {
+                // New customer - create checkout session
+                $checkoutUrl = $this->stripeService->createSeatsCheckoutSession($subscription, $seatsToAdd);
+                
+                return $this->responseService->json(true, 'Redirecting to checkout', [
+                    'checkout_url' => $checkoutUrl
+                ]);
+            }
+        } catch (\Exception $e) {
+            return $this->responseService->json(false, $e->getMessage(), null, 500);
+        }
+    }
+
+    #[Route('/billing/seats/success', name: 'billing_seats_success#', methods: ['GET'])]
+    public function seatsCheckoutSuccess(Request $request): JsonResponse
+    {
+        $sessionId = $request->query->get('session_id');
+        
+        if (!$sessionId) {
+            return $this->responseService->json(false, 'Invalid session', null, 400);
+        }
+        
+        try {
+            $this->stripeService->processSeatsCheckout($sessionId);
+            
+            return $this->responseService->json(true, 'Seats purchased successfully');
+        } catch (\Exception $e) {
+            return $this->responseService->json(false, $e->getMessage(), null, 500);
+        }
+    }
+
 }

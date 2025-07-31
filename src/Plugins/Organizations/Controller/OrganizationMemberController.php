@@ -74,8 +74,13 @@ class OrganizationMemberController extends AbstractController
                 return $this->responseService->json(false, 'You do not have access to this organization.');
             }
 
+            $organization = $this->organizationService->getOne($organization_id);
+
             // Get all members of the organization
             $members = $this->userOrganizationService->getMembersByOrganization($organization_id);
+
+            // Get seat information
+            $seatInfo = $this->billingService->getOrganizationSeatInfo($organization);
 
             $result = [];
             foreach ($members as $member) {
@@ -93,7 +98,10 @@ class OrganizationMemberController extends AbstractController
                 ];
             }
 
-            return $this->responseService->json(true, 'Members retrieved successfully.', $result);
+            return $this->responseService->json(true, 'Members retrieved successfully.', [
+                'members' => $result,
+                'seats' => $seatInfo  // Include seat information
+            ]);
         } catch (\Exception $e) {
             return $this->responseService->json(false, $e->getMessage(), null, 500);
         }
@@ -101,6 +109,79 @@ class OrganizationMemberController extends AbstractController
 
     #[Route('/members/invite', name: 'organization_members_invite#', methods: ['POST'])]
     public function inviteMember(int $organization_id, Request $request): JsonResponse
+    {
+        $user = $request->attributes->get('user');
+        $data = $request->attributes->get('data');
+
+        try {
+            // Check if user is admin of this organization
+            $userOrg = $this->userOrganizationService->getOrganizationByUser($organization_id, $user);
+            if (!$userOrg || $userOrg->role !== 'admin') {
+                return $this->responseService->json(false, 'You do not have permission to invite members.');
+            }
+
+            // Validate email
+            if (empty($data['email']) || !filter_var($data['email'], FILTER_VALIDATE_EMAIL)) {
+                return $this->responseService->json(false, 'Valid email address is required.');
+            }
+
+            $organization = $this->organizationService->getOne($organization_id);
+            if (!$organization) {
+                return $this->responseService->json(false, 'Organization not found.');
+            }
+
+            // Check seat availability
+            if (!$this->billingService->canAddMember($organization)) {
+                $seatInfo = $this->billingService->getOrganizationSeatInfo($organization);
+                return $this->responseService->json(
+                    false, 
+                    'No seats available. Your organization has used all ' . $seatInfo['total'] . ' seats.',
+                    [
+                        'seats' => $seatInfo,
+                        'requires_purchase' => true
+                    ],
+                    403
+                );
+            }
+
+            // Check if user with this email exists
+            $invitedUser = $this->userRepository->findOneBy(['email' => $data['email']]);
+            
+            if ($invitedUser) {
+                // Check if user is already a member
+                $existingMember = $this->userOrganizationService->getOrganizationByUser($organization_id, $invitedUser);
+                if ($existingMember) {
+                    return $this->responseService->json(false, 'User is already a member of this organization.');
+                }
+            }
+            
+            // Create invitation using the invitation service
+            $invitation = $this->invitationService->sendInvitation(
+                $data['email'],
+                $user,  
+                $organization,
+                null,   // No team for organization invitations
+                $data['role'] ?? 'member'
+            );
+            
+            // Get updated seat info
+            $seatInfo = $this->billingService->getOrganizationSeatInfo($organization);
+            
+            return $this->responseService->json(
+                true, 
+                'Invitation sent successfully!',
+                [
+                    'invitation_id' => $invitation->getId(),
+                    'seats' => $seatInfo
+                ]
+            );
+        } catch (\Exception $e) {
+            return $this->responseService->json(false, $e->getMessage(), null, 500);
+        }
+    }
+
+    #[Route('/members/invite-OLD', name: 'organization_members_invite#', methods: ['POST'])]
+    public function inviteMemberOld(int $organization_id, Request $request): JsonResponse
     {
         $user = $request->attributes->get('user');
         $data = $request->attributes->get('data');
@@ -185,6 +266,37 @@ class OrganizationMemberController extends AbstractController
                 ]
             );
 
+        } catch (\Exception $e) {
+            return $this->responseService->json(false, $e->getMessage(), null, 500);
+        }
+    }
+
+
+    #[Route('/seats', name: 'organization_seats_info#', methods: ['GET'])]
+    public function getSeatInfo(int $organization_id, Request $request): JsonResponse
+    {
+        $user = $request->attributes->get('user');
+
+        try {
+            // Check if user has access to this organization
+            $userOrg = $this->userOrganizationService->getOrganizationByUser($organization_id, $user);
+            if (!$userOrg) {
+                return $this->responseService->json(false, 'You do not have access to this organization.');
+            }
+
+            $organization = $this->organizationService->getOne($organization_id);
+            if (!$organization) {
+                return $this->responseService->json(false, 'Organization not found.');
+            }
+
+            $seatInfo = $this->billingService->getOrganizationSeatInfo($organization);
+            $compliance = $this->billingService->checkOrganizationCompliance($organization);
+
+            return $this->responseService->json(true, 'Seat information retrieved.', [
+                'seats' => $seatInfo,
+                'compliance' => $compliance,
+                'can_invite' => $seatInfo['available'] > 0
+            ]);
         } catch (\Exception $e) {
             return $this->responseService->json(false, $e->getMessage(), null, 500);
         }
@@ -428,8 +540,8 @@ class OrganizationMemberController extends AbstractController
 
 
 
-    #[Route('/teams/{team_id}/members/invite', name: 'team_members_invite#', methods: ['POST'], requirements: ['team_id' => '\d+'])]
-    public function inviteTeamMember(int $organization_id, int $team_id, Request $request): JsonResponse
+    #[Route('/teams/{team_id}/members/inviteOld', name: 'team_members_invite#', methods: ['POST'], requirements: ['team_id' => '\d+'])]
+    public function inviteTeamMemberOld(int $organization_id, int $team_id, Request $request): JsonResponse
     {
         $user = $request->attributes->get('user');
         $data = $request->attributes->get('data');
@@ -518,6 +630,81 @@ class OrganizationMemberController extends AbstractController
                 ]
             );
 
+        } catch (\Exception $e) {
+            return $this->responseService->json(false, $e->getMessage(), null, 500);
+        }
+    }
+
+
+    #[Route('/teams/{team_id}/members/invite', name: 'team_members_invite#', methods: ['POST'])]
+    public function inviteTeamMember(int $organization_id, int $team_id, Request $request): JsonResponse
+    {
+        $user = $request->attributes->get('user');
+        $data = $request->attributes->get('data');
+
+        try {
+            // Get team
+            $team = $this->teamService->getOne($team_id);
+            if (!$team || $team->getOrganization()->getId() !== $organization_id) {
+                return $this->responseService->json(false, 'Team not found.');
+            }
+
+            // Check if user has admin access to team
+            if (!$this->permissionService->hasAdminAccess($user, $team)) {
+                return $this->responseService->json(false, 'You do not have permission to invite members.');
+            }
+
+            // Validate email
+            if (empty($data['email']) || !filter_var($data['email'], FILTER_VALIDATE_EMAIL)) {
+                return $this->responseService->json(false, 'Valid email address is required.');
+            }
+
+            $organization = $team->getOrganization();
+
+            // Check seat availability at organization level
+            if (!$this->billingService->canAddMember($organization)) {
+                $seatInfo = $this->billingService->getOrganizationSeatInfo($organization);
+                return $this->responseService->json(
+                    false, 
+                    'No seats available in the organization. Your organization has used all ' . $seatInfo['total'] . ' seats.',
+                    [
+                        'seats' => $seatInfo,
+                        'requires_purchase' => true
+                    ],
+                    403
+                );
+            }
+
+            // Check if user exists
+            $invitedUser = $this->userRepository->findOneBy(['email' => $data['email']]);
+            
+            if ($invitedUser) {
+                // Check if already in team
+                if ($this->userTeamService->isUserInTeam($invitedUser, $team)) {
+                    return $this->responseService->json(false, 'User is already a member of this team.');
+                }
+            }
+
+            // Send invitation
+            $invitation = $this->invitationService->sendInvitation(
+                $data['email'],
+                $user,
+                $organization,
+                $team,
+                $data['role'] ?? 'member'
+            );
+
+            // Get updated seat info
+            $seatInfo = $this->billingService->getOrganizationSeatInfo($organization);
+
+            return $this->responseService->json(
+                true,
+                'Team invitation sent successfully!',
+                [
+                    'invitation_id' => $invitation->getId(),
+                    'seats' => $seatInfo
+                ]
+            );
         } catch (\Exception $e) {
             return $this->responseService->json(false, $e->getMessage(), null, 500);
         }

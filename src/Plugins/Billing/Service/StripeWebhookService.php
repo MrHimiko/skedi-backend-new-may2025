@@ -74,8 +74,20 @@ class StripeWebhookService
 
     private function handleCheckoutCompleted($session): void
     {
-        $this->log("handleCheckoutCompleted - skipping");
+        $this->log("handleCheckoutCompleted started", [
+            'session_id' => $session['id'],
+            'mode' => $session['mode']
+        ]);
+        
+        // For setup mode sessions (adding seats), process separately
+        if ($session['mode'] === 'setup' && isset($session['metadata']['action']) && $session['metadata']['action'] === 'add_seats') {
+            $this->handleSeatsCheckoutCompleted($session);
+            return;
+        }
+        
+        // Regular subscription checkout handling continues...
     }
+
 
     private function handleSubscriptionCreated($subscription): void
     {
@@ -162,36 +174,108 @@ class StripeWebhookService
 
     private function handleSubscriptionUpdate($subscription): void
     {
-        $this->log("handleSubscriptionUpdate", ['id' => $subscription['id']]);
+        $this->log("handleSubscriptionUpdate started", [
+            'subscription_id' => $subscription['id'],
+            'status' => $subscription['status']
+        ]);
+        
+        // Find the organization subscription
+        $orgSubscription = $this->entityManager->getRepository(OrganizationSubscriptionEntity::class)
+            ->findOneBy(['stripeSubscriptionId' => $subscription['id']]);
+            
+        if (!$orgSubscription) {
+            $this->log("Organization subscription not found for Stripe ID: " . $subscription['id']);
+            return;
+        }
+        
+        $this->log("Found organization subscription", ['id' => $orgSubscription->getId()]);
+        
+        // Update subscription status
+        $orgSubscription->setStatus($subscription['status']);
+        
+        // Update period dates
+        if (isset($subscription['current_period_start'])) {
+            $orgSubscription->setCurrentPeriodStart(new \DateTime('@' . $subscription['current_period_start']));
+        }
+        if (isset($subscription['current_period_end'])) {
+            $orgSubscription->setCurrentPeriodEnd(new \DateTime('@' . $subscription['current_period_end']));
+        }
+        
+        // Update seat count from subscription items
+        $this->updateSeatCountFromSubscription($orgSubscription, $subscription);
+        
+        $this->entityManager->persist($orgSubscription);
+        $this->entityManager->flush();
+        
+        $this->log("Subscription updated successfully");
+    }   
+
+    private function updateSeatCountFromSubscription(OrganizationSubscriptionEntity $orgSubscription, array $stripeSubscription): void
+    {
+        // Look through subscription items for seats
+        $seatCount = 0;
+        $seatItemId = null;
+        
+        if (isset($stripeSubscription['items']['data'])) {
+            foreach ($stripeSubscription['items']['data'] as $item) {
+                // Check if this is the seats price (you'll need to inject the seats price ID)
+                if ($item['price']['id'] === $this->additionalSeatsPriceId) {
+                    $seatCount = $item['quantity'];
+                    $seatItemId = $item['id'];
+                    break;
+                }
+            }
+        }
+        
+        $this->log("Updating seat count", [
+            'previous' => $orgSubscription->getAdditionalSeats(),
+            'new' => $seatCount,
+            'item_id' => $seatItemId
+        ]);
+        
+        $orgSubscription->setAdditionalSeats($seatCount);
+        if ($seatItemId) {
+            $orgSubscription->setSeatsSubscriptionItemId($seatItemId);
+        }
+    }
+
+
+    private function handleSeatsCheckoutCompleted($session): void
+    {
+        $this->log("Processing seats checkout completion");
+        
+        $organizationId = $session['metadata']['organization_id'] ?? null;
+        $seatsToAdd = (int)($session['metadata']['seats_to_add'] ?? 0);
+        
+        if (!$organizationId || $seatsToAdd <= 0) {
+            $this->log("Invalid seats checkout metadata");
+            return;
+        }
         
         try {
-            $sub = $this->entityManager->getRepository(OrganizationSubscriptionEntity::class)
-                ->findOneBy(['stripeSubscriptionId' => $subscription['id']]);
+            // Find organization subscription
+            $subscription = $this->entityManager->getRepository(OrganizationSubscriptionEntity::class)
+                ->findOneBy(['organization' => $organizationId]);
                 
-            if (!$sub) {
-                $this->log("Subscription not found for update");
+            if (!$subscription) {
+                $this->log("Organization subscription not found");
                 return;
             }
             
-            $sub->setStatus($subscription['status']);
+            // The actual seat update will happen via subscription.updated webhook
+            // Just log that checkout was completed
+            $this->log("Seats checkout completed successfully", [
+                'organization_id' => $organizationId,
+                'seats_requested' => $seatsToAdd
+            ]);
             
-            if (isset($subscription['current_period_start']) && $subscription['current_period_start']) {
-                $sub->setCurrentPeriodStart(new \DateTime('@' . $subscription['current_period_start']));
-            }
-            
-            if (isset($subscription['current_period_end']) && $subscription['current_period_end']) {
-                $sub->setCurrentPeriodEnd(new \DateTime('@' . $subscription['current_period_end']));
-            }
-            
-            $this->entityManager->persist($sub);
-            $this->entityManager->flush();
-            
-            $this->log("Subscription updated successfully");
         } catch (\Exception $e) {
-            $this->log("Exception in handleSubscriptionUpdate", [
+            $this->log("Error processing seats checkout", [
                 'error' => $e->getMessage()
             ]);
-            throw $e;
         }
     }
+
+
+
 }

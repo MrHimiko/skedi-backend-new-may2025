@@ -29,6 +29,9 @@ class OrganizationSubscriptionEntity
     #[ORM\Column(name: "stripe_customer_id", type: "string", length: 255, nullable: true)]
     private ?string $stripeCustomerId = null;
 
+    #[ORM\Column(name: "seats_subscription_item_id", type: "string", length: 255, nullable: true)]
+    private ?string $seatsSubscriptionItemId = null;
+
     #[ORM\Column(type: "string", length: 50)]
     private string $status = 'active';
 
@@ -53,12 +56,14 @@ class OrganizationSubscriptionEntity
         $this->updatedAt = new \DateTime();
     }
 
-    public function getId(): int
+    // Getters and Setters
+
+    public function getId(): ?int
     {
         return $this->id;
     }
 
-    public function getOrganization(): OrganizationEntity
+    public function getOrganization(): ?OrganizationEntity
     {
         return $this->organization;
     }
@@ -69,7 +74,7 @@ class OrganizationSubscriptionEntity
         return $this;
     }
 
-    public function getPlan(): BillingPlanEntity
+    public function getPlan(): ?BillingPlanEntity
     {
         return $this->plan;
     }
@@ -102,6 +107,17 @@ class OrganizationSubscriptionEntity
         return $this;
     }
 
+    public function getSeatsSubscriptionItemId(): ?string
+    {
+        return $this->seatsSubscriptionItemId;
+    }
+
+    public function setSeatsSubscriptionItemId(?string $seatsSubscriptionItemId): self
+    {
+        $this->seatsSubscriptionItemId = $seatsSubscriptionItemId;
+        return $this;
+    }
+
     public function getStatus(): string
     {
         return $this->status;
@@ -111,11 +127,6 @@ class OrganizationSubscriptionEntity
     {
         $this->status = $status;
         return $this;
-    }
-
-    public function isActive(): bool
-    {
-        return $this->status === 'active';
     }
 
     public function getAdditionalSeats(): int
@@ -151,23 +162,34 @@ class OrganizationSubscriptionEntity
         return $this;
     }
 
-    public function getTotalSeats(): int
+    public function getCreatedAt(): \DateTime
     {
-        return $this->plan->getIncludedSeats() + $this->additionalSeats;
+        return $this->createdAt;
     }
 
-    public function toArray(): array
+    public function getUpdatedAt(): \DateTime
     {
-        return [
-            'id' => $this->id,
-            'organization_id' => $this->organization->getId(),
-            'plan' => $this->plan->toArray(),
-            'status' => $this->status,
-            'additional_seats' => $this->additionalSeats,
-            'total_seats' => $this->getTotalSeats(),
-            'current_period_start' => $this->currentPeriodStart?->format('Y-m-d H:i:s'),
-            'current_period_end' => $this->currentPeriodEnd?->format('Y-m-d H:i:s'),
-            'created_at' => $this->createdAt->format('Y-m-d H:i:s'),
-        ];
+        return $this->updatedAt;
+    }
+
+    public function setUpdatedAt(\DateTime $updatedAt): self
+    {
+        $this->updatedAt = $updatedAt;
+        return $this;
+    }
+
+    // Helper methods
+
+    public function isActive(): bool
+    {
+        return in_array($this->status, ['active', 'trialing']);
+    }
+
+    /**
+     * Get total seats (1 base + additional purchased seats)
+     */
+    public function getTotalSeats(): int
+    {
+        return 1 + $this->additionalSeats;
     }
 }
