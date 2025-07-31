@@ -52,6 +52,8 @@ microsoft_outlook:
     resource: ../src/Plugins/Integrations/Microsoft/Outlook/Controller/
     type: attribute
 
+
+
 # billing:
 #     resource: ../src/Plugins/Billing/Controller/
 #     type: attribute

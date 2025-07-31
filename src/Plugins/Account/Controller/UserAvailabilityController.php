@@ -11,6 +11,8 @@ use App\Plugins\Account\Service\UserAvailabilityService;
 use App\Plugins\Account\Repository\UserRepository;
 use App\Plugins\Account\Exception\AccountException;
 use App\Plugins\Account\Entity\UserAvailabilityEntity;
+use Doctrine\ORM\EntityManagerInterface;
+use App\Service\CrudManager;
 
 #[Route('/api')]
 class UserAvailabilityController extends AbstractController
@@ -18,15 +20,21 @@ class UserAvailabilityController extends AbstractController
     private ResponseService $responseService;
     private UserAvailabilityService $availabilityService;
     private UserRepository $userRepository;
+    private EntityManagerInterface $entityManager;
+    private CrudManager $crudManager;
 
     public function __construct(
         ResponseService $responseService,
         UserAvailabilityService $availabilityService,
-        UserRepository $userRepository
+        UserRepository $userRepository,
+        EntityManagerInterface $entityManager,
+        CrudManager $crudManager
     ) {
         $this->responseService = $responseService;
         $this->availabilityService = $availabilityService;
         $this->userRepository = $userRepository;
+        $this->entityManager = $entityManager;
+        $this->crudManager = $crudManager;
     }
 
     /**
@@ -249,4 +257,219 @@ class UserAvailabilityController extends AbstractController
             return $this->responseService->json(false, $e, null, 500);
         }
     }
+
+
+
+    /**
+     * Create out of office entry for authenticated user
+     * Requires authentication
+     */
+    #[Route('/user/out-of-office', name: 'user_out_of_office_create#', methods: ['POST'])]
+    public function createOutOfOffice(Request $request): JsonResponse
+    {
+        $user = $request->attributes->get('user');
+        $data = $request->attributes->get('data');
+
+        try {
+            if (empty($data['start_time']) || empty($data['end_time'])) {
+                return $this->responseService->json(false, 'Start time and end time are required', null, 400);
+            }
+
+            $startTime = new \DateTime($data['start_time']);
+            $endTime = new \DateTime($data['end_time']);
+
+            if ($startTime >= $endTime) {
+                return $this->responseService->json(false, 'End time must be after start time', null, 400);
+            }
+
+            // Build description from reason and notes
+            $description = '';
+            if (!empty($data['reason'])) {
+                $description = $data['reason'];
+                if (!empty($data['notes'])) {
+                    $description .= ': ' . $data['notes'];
+                }
+            } else if (!empty($data['notes'])) {
+                $description = $data['notes'];
+            }
+
+            $availability = $this->availabilityService->createInternalAvailability(
+                $user,
+                'Out of Office',
+                $startTime,
+                $endTime,
+                null, // No event
+                null, // No booking
+                $description,
+                'confirmed'
+            );
+            
+            // Mark this as out of office by setting source
+            $availability->setSource('out_of_office');
+            $this->entityManager->persist($availability);
+            $this->entityManager->flush();
+
+            return $this->responseService->json(true, 'Out of office created successfully', $availability->toArray());
+        } catch (AccountException $e) {
+            return $this->responseService->json(false, $e->getMessage(), null, 400);
+        } catch (\Exception $e) {
+            return $this->responseService->json(false, 'An error occurred', null, 500);
+        }
+    }
+
+    /**
+     * Get out of office entries for authenticated user
+     * Requires authentication
+     */
+    #[Route('/user/out-of-office', name: 'user_out_of_office_list#', methods: ['GET'])]
+    public function getOutOfOfficeList(Request $request): JsonResponse
+    {
+        $user = $request->attributes->get('user');
+        
+        try {
+            // Use CrudManager properly - no QueryBuilder in callback!
+            $now = new \DateTime();
+            $outOfOfficeEntries = $this->crudManager->findMany(
+                UserAvailabilityEntity::class,
+                [], // filters
+                1,  // page
+                1000, // limit
+                [
+                    'user' => $user,
+                    'source' => 'out_of_office',
+                    'deleted' => false
+                ]
+            );
+            
+            // Sort by startTime DESC in PHP since we can't use orderBy in callback
+            usort($outOfOfficeEntries, function($a, $b) {
+                return $b->getStartTime() <=> $a->getStartTime();
+            });
+            
+            $result = array_map(function ($item) {
+                $data = $item->toArray();
+                
+                // Parse description back to reason and notes
+                $description = $item->getDescription();
+                if ($description) {
+                    $parts = explode(': ', $description, 2);
+                    if (count($parts) === 2) {
+                        $data['reason'] = $parts[0];
+                        $data['notes'] = $parts[1];
+                    } else {
+                        $data['reason'] = 'Unspecified';
+                        $data['notes'] = $description;
+                    }
+                } else {
+                    $data['reason'] = 'Unspecified';
+                    $data['notes'] = '';
+                }
+                
+                return $data;
+            }, $outOfOfficeEntries);
+
+            return $this->responseService->json(true, 'Out of office entries retrieved', $result);
+        } catch (\Exception $e) {
+            return $this->responseService->json(false, 'An error occurred', null, 500);
+        }
+    }
+
+    /**
+     * Update out of office entry
+     * Requires authentication
+     */
+    #[Route('/user/out-of-office/{id}', name: 'user_out_of_office_update#', methods: ['PUT'])]
+    public function updateOutOfOffice(Request $request, int $id): JsonResponse
+    {
+        $user = $request->attributes->get('user');
+        $data = $request->attributes->get('data');
+        
+        try {
+            $availability = $this->crudManager->findOne(
+                UserAvailabilityEntity::class, 
+                $id, 
+                [
+                    'user' => $user,
+                    'source' => 'out_of_office',
+                    'deleted' => false
+                ]
+            );
+            
+            if (!$availability) {
+                return $this->responseService->json(false, 'Out of office entry not found', null, 404);
+            }
+            
+            if (!empty($data['start_time'])) {
+                $availability->setStartTime(new \DateTime($data['start_time']));
+            }
+            
+            if (!empty($data['end_time'])) {
+                $availability->setEndTime(new \DateTime($data['end_time']));
+            }
+            
+            if ($availability->getStartTime() >= $availability->getEndTime()) {
+                return $this->responseService->json(false, 'End time must be after start time', null, 400);
+            }
+            
+            // Update description from reason and notes
+            if (isset($data['reason']) || isset($data['notes'])) {
+                $description = '';
+                $reason = $data['reason'] ?? 'Unspecified';
+                $notes = $data['notes'] ?? '';
+                
+                if ($reason && $reason !== 'Unspecified') {
+                    $description = $reason;
+                    if ($notes) {
+                        $description .= ': ' . $notes;
+                    }
+                } else if ($notes) {
+                    $description = $notes;
+                }
+                
+                $availability->setDescription($description);
+            }
+            
+            $this->entityManager->persist($availability);
+            $this->entityManager->flush();
+            
+            return $this->responseService->json(true, 'Out of office updated successfully', $availability->toArray());
+        } catch (\Exception $e) {
+            return $this->responseService->json(false, 'An error occurred', null, 500);
+        }
+    }
+
+    /**
+     * Delete out of office entry
+     * Requires authentication
+     */
+    #[Route('/user/out-of-office/{id}', name: 'user_out_of_office_delete#', methods: ['DELETE'])]
+    public function deleteOutOfOffice(Request $request, int $id): JsonResponse
+    {
+        $user = $request->attributes->get('user');
+        
+        try {
+            $availability = $this->crudManager->findOne(
+                UserAvailabilityEntity::class, 
+                $id, 
+                [
+                    'user' => $user,
+                    'source' => 'out_of_office',
+                    'deleted' => false
+                ]
+            );
+            
+            if (!$availability) {
+                return $this->responseService->json(false, 'Out of office entry not found', null, 404);
+            }
+            
+            // Soft delete
+            $this->crudManager->delete($availability);
+            
+            return $this->responseService->json(true, 'Out of office deleted successfully');
+        } catch (\Exception $e) {
+            return $this->responseService->json(false, 'An error occurred', null, 500);
+        }
+    }
+
+
 }
