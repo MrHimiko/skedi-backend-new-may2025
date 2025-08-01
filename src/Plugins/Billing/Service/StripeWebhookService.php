@@ -13,16 +13,21 @@ use Doctrine\ORM\EntityManagerInterface;
 class StripeWebhookService
 {
     private StripeClient $stripe;
-    private string $logFile = '/tmp/stripe_webhook_debug.log';
+    private string $logFile = './webhook_debug.log';
     
     public function __construct(
         private string $stripeSecretKey,
         private string $webhookSecret,
         private EntityManagerInterface $entityManager,
         private OrganizationService $organizationService,
-        private BillingPlanRepository $planRepository
+        private BillingPlanRepository $planRepository,
+        private ?string $additionalSeatsPriceId = null
     ) {
         $this->stripe = new StripeClient($stripeSecretKey);
+        // Get the price ID from environment if not injected
+        if (!$this->additionalSeatsPriceId) {
+            $this->additionalSeatsPriceId = $_ENV['STRIPE_ADDITIONAL_SEATS_PRICE_ID'] ?? '';
+        }
     }
 
     private function log($message, $data = null): void
@@ -54,12 +59,8 @@ class StripeWebhookService
                     break;
                     
                 case 'customer.subscription.created':
-                    $this->handleSubscriptionCreated($event['data']['object']);
-                    break;
-                    
                 case 'customer.subscription.updated':
-                case 'customer.subscription.deleted':
-                    $this->handleSubscriptionUpdate($event['data']['object']);
+                    $this->handleSubscriptionEvent($event['data']['object']);
                     break;
             }
         } catch (\Exception $e) {
@@ -74,121 +75,132 @@ class StripeWebhookService
 
     private function handleCheckoutCompleted($session): void
     {
-        $this->log("handleCheckoutCompleted started", [
+        $this->log("handleCheckoutCompleted", [
             'session_id' => $session['id'],
-            'mode' => $session['mode']
+            'mode' => $session['mode'],
+            'subscription_id' => $session['subscription'] ?? null,
+            'metadata' => $session['metadata'] ?? []
         ]);
         
-        // For setup mode sessions (adding seats), process separately
-        if ($session['mode'] === 'setup' && isset($session['metadata']['action']) && $session['metadata']['action'] === 'add_seats') {
-            $this->handleSeatsCheckoutCompleted($session);
+        // Only handle subscription mode checkouts
+        if ($session['mode'] !== 'subscription') {
+            $this->log("Not a subscription checkout, skipping");
             return;
         }
         
-        // Regular subscription checkout handling continues...
-    }
-
-
-    private function handleSubscriptionCreated($subscription): void
-    {
-        $this->log("handleSubscriptionCreated started", [
-            'subscription_id' => $subscription['id']
-        ]);
+        // Extract metadata
+        $organizationId = $session['metadata']['organization_id'] ?? null;
+        $planId = $session['metadata']['plan_id'] ?? null;
+        $additionalSeats = (int)($session['metadata']['additional_seats'] ?? 0);
+        $subscriptionId = $session['subscription'] ?? null;
         
-        $organizationId = $subscription['metadata']['organization_id'] ?? null;
-        $planId = $subscription['metadata']['plan_id'] ?? null;
-        
-        $this->log("Metadata extracted", [
-            'organization_id' => $organizationId,
-            'plan_id' => $planId
-        ]);
-        
-        if (!$organizationId || !$planId) {
-            $this->log("Missing metadata - aborting");
+        if (!$organizationId || !$planId || !$subscriptionId) {
+            $this->log("Missing required data", [
+                'organization_id' => $organizationId,
+                'plan_id' => $planId,
+                'subscription_id' => $subscriptionId
+            ]);
             return;
         }
         
         try {
-            $organizationId = (int)$organizationId;
-            $planId = (int)$planId;
-            
-            $this->log("Looking up organization", ['id' => $organizationId]);
-            $organization = $this->organizationService->getOne($organizationId);
-            
+            // Get organization
+            $organization = $this->organizationService->getOne((int)$organizationId);
             if (!$organization) {
-                $this->log("Organization not found!");
+                $this->log("Organization not found", ['id' => $organizationId]);
                 return;
             }
-            $this->log("Organization found", ['name' => $organization->getName()]);
             
-            $this->log("Looking up plan", ['id' => $planId]);
-            $plan = $this->planRepository->find($planId);
-            
+            // Get plan
+            $plan = $this->planRepository->find((int)$planId);
             if (!$plan) {
-                $this->log("Plan not found!");
+                $this->log("Plan not found", ['id' => $planId]);
                 return;
             }
-            $this->log("Plan found", ['name' => $plan->getName()]);
             
-            // Check if subscription already exists
-            $sub = $this->entityManager->getRepository(OrganizationSubscriptionEntity::class)
+            $this->log("Creating/updating subscription", [
+                'organization' => $organization->getName(),
+                'plan' => $plan->getName(),
+                'seats' => $additionalSeats
+            ]);
+            
+            // Find or create subscription
+            $subscription = $this->entityManager->getRepository(OrganizationSubscriptionEntity::class)
                 ->findOneBy(['organization' => $organization]);
                 
-            if (!$sub) {
-                $this->log("Creating new subscription");
-                $sub = new OrganizationSubscriptionEntity();
-                $sub->setOrganization($organization);
+            if (!$subscription) {
+                $subscription = new OrganizationSubscriptionEntity();
+                $subscription->setOrganization($organization);
+                $this->log("Created new subscription entity");
             } else {
-                $this->log("Updating existing subscription", ['id' => $sub->getId()]);
+                $this->log("Updating existing subscription", ['id' => $subscription->getId()]);
             }
             
-            $sub->setPlan($plan);
-            $sub->setStripeSubscriptionId($subscription['id']);
-            $sub->setStripeCustomerId($subscription['customer']);
-            $sub->setStatus($subscription['status']);
+            // Set all the data
+            $subscription->setPlan($plan);
+            $subscription->setStripeSubscriptionId($subscriptionId);
+            $subscription->setStripeCustomerId($session['customer']);
+            $subscription->setStatus('active');
+            $subscription->setAdditionalSeats($additionalSeats);
             
-            // Add null checks for timestamps
-            if (isset($subscription['current_period_start']) && $subscription['current_period_start']) {
-                $sub->setCurrentPeriodStart(new \DateTime('@' . $subscription['current_period_start']));
+            // Set period dates if available
+            if (isset($session['created'])) {
+                $subscription->setCurrentPeriodStart(new \DateTime('@' . $session['created']));
             }
             
-            if (isset($subscription['current_period_end']) && $subscription['current_period_end']) {
-                $sub->setCurrentPeriodEnd(new \DateTime('@' . $subscription['current_period_end']));
-            }
-            
-            $this->log("Persisting subscription");
-            $this->entityManager->persist($sub);
-            
-            $this->log("Flushing to database");
+            // Persist
+            $this->entityManager->persist($subscription);
             $this->entityManager->flush();
             
-            $this->log("Subscription saved successfully!", ['subscription_id' => $sub->getId()]);
+            $this->log("Subscription saved successfully", [
+                'subscription_id' => $subscription->getId(),
+                'plan' => $plan->getName(),
+                'seats' => $additionalSeats
+            ]);
+            
+            // Also retrieve and update the Stripe subscription to ensure it has correct metadata
+            try {
+                $this->stripe->subscriptions->update($subscriptionId, [
+                    'metadata' => [
+                        'organization_id' => $organizationId,
+                        'plan_id' => $planId,
+                        'additional_seats' => $additionalSeats
+                    ]
+                ]);
+                $this->log("Updated Stripe subscription metadata");
+            } catch (\Exception $e) {
+                $this->log("Failed to update Stripe subscription metadata", ['error' => $e->getMessage()]);
+            }
+            
         } catch (\Exception $e) {
-            $this->log("Exception in handleSubscriptionCreated", [
+            $this->log("Error in handleCheckoutCompleted", [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
-            throw $e;
         }
     }
 
-    private function handleSubscriptionUpdate($subscription): void
+    private function handleSubscriptionEvent($subscription): void
     {
-        $this->log("handleSubscriptionUpdate started", [
+        $this->log("handleSubscriptionEvent", [
             'subscription_id' => $subscription['id'],
-            'status' => $subscription['status']
+            'status' => $subscription['status'],
+            'metadata' => $subscription['metadata'] ?? []
         ]);
         
-        // Find the organization subscription
+        // Try to find the subscription by Stripe ID
         $orgSubscription = $this->entityManager->getRepository(OrganizationSubscriptionEntity::class)
             ->findOneBy(['stripeSubscriptionId' => $subscription['id']]);
             
         if (!$orgSubscription) {
-            $this->log("Organization subscription not found for Stripe ID: " . $subscription['id']);
+            $this->log("Subscription not found in database", ['stripe_id' => $subscription['id']]);
+            
+            // If we have metadata, try to create it
+            if (isset($subscription['metadata']['organization_id'])) {
+                $this->createSubscriptionFromStripeData($subscription);
+            }
             return;
         }
-        
-        $this->log("Found organization subscription", ['id' => $orgSubscription->getId()]);
         
         // Update subscription status
         $orgSubscription->setStatus($subscription['status']);
@@ -204,78 +216,122 @@ class StripeWebhookService
         // Update seat count from subscription items
         $this->updateSeatCountFromSubscription($orgSubscription, $subscription);
         
-        $this->entityManager->persist($orgSubscription);
         $this->entityManager->flush();
         
-        $this->log("Subscription updated successfully");
-    }   
+        $this->log("Subscription updated", [
+            'id' => $orgSubscription->getId(),
+            'status' => $orgSubscription->getStatus(),
+            'seats' => $orgSubscription->getAdditionalSeats()
+        ]);
+    }
+
+    private function createSubscriptionFromStripeData($subscription): void
+    {
+        $organizationId = $subscription['metadata']['organization_id'] ?? null;
+        $planId = $subscription['metadata']['plan_id'] ?? null;
+        
+        if (!$organizationId) {
+            $this->log("Cannot create subscription without organization_id");
+            return;
+        }
+        
+        try {
+            $organization = $this->organizationService->getOne((int)$organizationId);
+            if (!$organization) {
+                $this->log("Organization not found", ['id' => $organizationId]);
+                return;
+            }
+            
+            // Try to determine plan from metadata or items
+            $plan = null;
+            if ($planId) {
+                $plan = $this->planRepository->find((int)$planId);
+            }
+            
+            if (!$plan) {
+                // Try to find from subscription items
+                foreach ($subscription['items']['data'] ?? [] as $item) {
+                    $priceId = $item['price']['id'] ?? null;
+                    if ($priceId && $priceId !== $this->additionalSeatsPriceId) {
+                        // Query by the actual database column name
+                        $plans = $this->planRepository->findAll();
+                        foreach ($plans as $p) {
+                            if ($p->getStripePriceId() === $priceId) {
+                                $plan = $p;
+                                break 2;
+                            }
+                        }
+                    }
+                }
+            }
+            
+            if (!$plan) {
+                // Default to professional
+                $plan = $this->planRepository->findOneBy(['slug' => 'professional']);
+                if (!$plan) {
+                    $this->log("No plan found, cannot create subscription");
+                    return;
+                }
+            }
+            
+            $orgSubscription = new OrganizationSubscriptionEntity();
+            $orgSubscription->setOrganization($organization);
+            $orgSubscription->setPlan($plan);
+            $orgSubscription->setStripeSubscriptionId($subscription['id']);
+            $orgSubscription->setStripeCustomerId($subscription['customer']);
+            $orgSubscription->setStatus($subscription['status']);
+            
+            if (isset($subscription['current_period_start'])) {
+                $orgSubscription->setCurrentPeriodStart(new \DateTime('@' . $subscription['current_period_start']));
+            }
+            if (isset($subscription['current_period_end'])) {
+                $orgSubscription->setCurrentPeriodEnd(new \DateTime('@' . $subscription['current_period_end']));
+            }
+            
+            // Update seat count
+            $this->updateSeatCountFromSubscription($orgSubscription, $subscription);
+            
+            $this->entityManager->persist($orgSubscription);
+            $this->entityManager->flush();
+            
+            $this->log("Created subscription from Stripe data", [
+                'id' => $orgSubscription->getId(),
+                'plan' => $plan->getName(),
+                'seats' => $orgSubscription->getAdditionalSeats()
+            ]);
+            
+        } catch (\Exception $e) {
+            $this->log("Error creating subscription from Stripe data", [
+                'error' => $e->getMessage()
+            ]);
+        }
+    }
 
     private function updateSeatCountFromSubscription(OrganizationSubscriptionEntity $orgSubscription, array $stripeSubscription): void
     {
-        // Look through subscription items for seats
+        if (!$this->additionalSeatsPriceId) {
+            $this->log("No additional seats price ID configured");
+            return;
+        }
+        
         $seatCount = 0;
         $seatItemId = null;
         
-        if (isset($stripeSubscription['items']['data'])) {
-            foreach ($stripeSubscription['items']['data'] as $item) {
-                // Check if this is the seats price (you'll need to inject the seats price ID)
-                if ($item['price']['id'] === $this->additionalSeatsPriceId) {
-                    $seatCount = $item['quantity'];
-                    $seatItemId = $item['id'];
-                    break;
-                }
+        foreach ($stripeSubscription['items']['data'] ?? [] as $item) {
+            if ($item['price']['id'] === $this->additionalSeatsPriceId) {
+                $seatCount = $item['quantity'];
+                $seatItemId = $item['id'];
+                $this->log("Found seats in subscription", [
+                    'quantity' => $seatCount,
+                    'item_id' => $seatItemId
+                ]);
+                break;
             }
         }
-        
-        $this->log("Updating seat count", [
-            'previous' => $orgSubscription->getAdditionalSeats(),
-            'new' => $seatCount,
-            'item_id' => $seatItemId
-        ]);
         
         $orgSubscription->setAdditionalSeats($seatCount);
         if ($seatItemId) {
             $orgSubscription->setSeatsSubscriptionItemId($seatItemId);
         }
     }
-
-
-    private function handleSeatsCheckoutCompleted($session): void
-    {
-        $this->log("Processing seats checkout completion");
-        
-        $organizationId = $session['metadata']['organization_id'] ?? null;
-        $seatsToAdd = (int)($session['metadata']['seats_to_add'] ?? 0);
-        
-        if (!$organizationId || $seatsToAdd <= 0) {
-            $this->log("Invalid seats checkout metadata");
-            return;
-        }
-        
-        try {
-            // Find organization subscription
-            $subscription = $this->entityManager->getRepository(OrganizationSubscriptionEntity::class)
-                ->findOneBy(['organization' => $organizationId]);
-                
-            if (!$subscription) {
-                $this->log("Organization subscription not found");
-                return;
-            }
-            
-            // The actual seat update will happen via subscription.updated webhook
-            // Just log that checkout was completed
-            $this->log("Seats checkout completed successfully", [
-                'organization_id' => $organizationId,
-                'seats_requested' => $seatsToAdd
-            ]);
-            
-        } catch (\Exception $e) {
-            $this->log("Error processing seats checkout", [
-                'error' => $e->getMessage()
-            ]);
-        }
-    }
-
-
-
 }

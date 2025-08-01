@@ -17,10 +17,11 @@ class StripeService
     public function __construct(
         string $stripeSecretKey,
         private EntityManagerInterface $entityManager,
-        string $additionalSeatsPriceId
+        ?string $additionalSeatsPriceId = null
     ) {
         $this->stripe = new StripeClient($stripeSecretKey);
-        $this->additionalSeatsPriceId = $additionalSeatsPriceId;
+        // Get the price ID from environment if not injected
+        $this->additionalSeatsPriceId = $additionalSeatsPriceId ?: ($_ENV['STRIPE_ADDITIONAL_SEATS_PRICE_ID'] ?? '');
     }
 
     /**
@@ -40,6 +41,10 @@ class StripeService
         
         // Add seats as a subscription item if requested
         if ($additionalSeats > 0) {
+            if (!$this->additionalSeatsPriceId) {
+                throw new \Exception('Additional seats price ID not configured');
+            }
+            
             $lineItems[] = [
                 'price' => $this->additionalSeatsPriceId,
                 'quantity' => $additionalSeats,
@@ -59,7 +64,8 @@ class StripeService
             'subscription_data' => [
                 'metadata' => [
                     'organization_id' => $organization->getId(),
-                    'plan_id' => $plan->getId()
+                    'plan_id' => $plan->getId(),
+                    'additional_seats' => $additionalSeats
                 ]
             ]
         ]);
@@ -74,20 +80,34 @@ class StripeService
         OrganizationSubscriptionEntity $subscription,
         int $seatsToAdd
     ): string {
+        if (!$this->additionalSeatsPriceId) {
+            throw new \Exception('Additional seats price ID not configured');
+        }
+        
         if (!$subscription->getStripeCustomerId()) {
             throw new \Exception('No Stripe customer found for this subscription');
         }
 
-        // Create checkout session to modify existing subscription
+        if (!$subscription->getStripeSubscriptionId()) {
+            throw new \Exception('No active subscription found');
+        }
+
+        // Create a one-time payment for the prorated seats amount
+        // Then update the subscription after payment
         $session = $this->stripe->checkout->sessions->create([
-            'mode' => 'setup', // Use setup mode for modifying subscription
+            'mode' => 'payment',
             'customer' => $subscription->getStripeCustomerId(),
+            'line_items' => [[
+                'price' => $this->additionalSeatsPriceId,
+                'quantity' => $seatsToAdd,
+            ]],
             'success_url' => $_ENV['APP_URL'] . '/billing/seats/success?session_id={CHECKOUT_SESSION_ID}&seats=' . $seatsToAdd,
             'cancel_url' => $_ENV['APP_URL'] . '/billing/cancel',
             'metadata' => [
                 'organization_id' => $subscription->getOrganization()->getId(),
                 'seats_to_add' => $seatsToAdd,
-                'action' => 'add_seats'
+                'action' => 'add_seats',
+                'subscription_id' => $subscription->getStripeSubscriptionId()
             ]
         ]);
         
@@ -206,12 +226,14 @@ class StripeService
         if ($session->metadata->action === 'add_seats') {
             $organizationId = $session->metadata->organization_id;
             $seatsToAdd = (int) $session->metadata->seats_to_add;
+            $subscriptionId = $session->metadata->subscription_id ?? null;
             
             // Find subscription
             $subscription = $this->entityManager->getRepository(OrganizationSubscriptionEntity::class)
                 ->findOneBy(['organization' => $organizationId]);
                 
-            if ($subscription) {
+            if ($subscription && $subscriptionId) {
+                // Update the subscription with the new seats
                 $this->addSeats($subscription, $seatsToAdd);
             }
         }

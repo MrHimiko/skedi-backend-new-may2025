@@ -1,0 +1,51 @@
+# config/services/billing.yaml
+services:
+    # Billing Service
+    App\Plugins\Billing\Service\BillingService:
+        arguments:
+            $entityManager: '@doctrine.orm.entity_manager'
+            $organizationService: '@App\Plugins\Organizations\Service\OrganizationService'
+        public: true
+
+    # Stripe Service
+    App\Plugins\Billing\Service\StripeService:
+        arguments:
+            $stripeSecretKey: '%env(STRIPE_SECRET_KEY)%'
+            $entityManager: '@doctrine.orm.entity_manager'
+            $additionalSeatsPriceId: '%env(STRIPE_ADDITIONAL_SEATS_PRICE_ID)%'
+        public: true
+
+    # Stripe Webhook Service
+    App\Plugins\Billing\Service\StripeWebhookService:
+        arguments:
+            $stripeSecretKey: '%env(STRIPE_SECRET_KEY)%'
+            $webhookSecret: '%env(STRIPE_WEBHOOK_SECRET)%'
+            $entityManager: '@doctrine.orm.entity_manager'
+            $organizationService: '@App\Plugins\Organizations\Service\OrganizationService'
+            $planRepository: '@App\Plugins\Billing\Repository\BillingPlanRepository'
+            $additionalSeatsPriceId: '%env(STRIPE_ADDITIONAL_SEATS_PRICE_ID)%'
+        public: true
+
+    # Repositories
+    App\Plugins\Billing\Repository\BillingPlanRepository:
+        tags: ['doctrine.repository_service']
+        
+    App\Plugins\Billing\Repository\OrganizationSubscriptionRepository:
+        tags: ['doctrine.repository_service']
+
+    # Controllers
+    App\Plugins\Billing\Controller\BillingController:
+        arguments:
+            - '@App\Service\ResponseService'
+            - '@App\Plugins\Billing\Service\BillingService'
+            - '@App\Plugins\Billing\Service\StripeService'
+            - '@App\Plugins\Organizations\Service\OrganizationService'
+            - '@App\Plugins\Organizations\Service\UserOrganizationService'
+        tags: ['controller.service_arguments']
+        public: true
+
+    App\Plugins\Billing\Controller\StripeWebhookController:
+        arguments:
+            - '@App\Plugins\Billing\Service\StripeWebhookService'
+        tags: ['controller.service_arguments']
+        public: true

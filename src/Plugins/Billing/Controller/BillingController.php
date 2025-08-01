@@ -12,6 +12,8 @@ use App\Plugins\Billing\Service\BillingService;
 use App\Plugins\Billing\Service\StripeService;
 use App\Plugins\Organizations\Service\OrganizationService;
 use App\Plugins\Organizations\Service\UserOrganizationService;
+use Doctrine\ORM\EntityManagerInterface;
+use App\Plugins\Billing\Entity\OrganizationSubscriptionEntity;
 
 #[Route('/api/billing')]
 class BillingController extends AbstractController
@@ -21,7 +23,8 @@ class BillingController extends AbstractController
         private BillingService $billingService,
         private StripeService $stripeService,
         private OrganizationService $organizationService,
-        private UserOrganizationService $userOrganizationService
+        private UserOrganizationService $userOrganizationService,
+        private EntityManagerInterface $entityManager
     ) {}
 
     #[Route('/plans', name: 'billing_plans#', methods: ['GET'])]
@@ -62,44 +65,6 @@ class BillingController extends AbstractController
                 'subscription' => $subscription?->toArray(),
                 'plan_level' => $planLevel,
                 'can_add_members' => $this->billingService->canAddMember($organization)
-            ]);
-        } catch (\Exception $e) {
-            return $this->responseService->json(false, $e->getMessage(), null, 500);
-        }
-    }
-
-    #[Route('/organizations/{organization_id}/seats', name: 'billing_add_seats#', methods: ['POST'])]
-    public function addSeats(int $organization_id, Request $request): JsonResponse
-    {
-        $user = $request->attributes->get('user');
-        $data = $request->attributes->get('data');
-        
-        try {
-            $organization = $this->organizationService->getOne($organization_id);
-            if (!$organization) {
-                return $this->responseService->json(false, 'Organization not found', null, 404);
-            }
-            
-            $userOrg = $this->userOrganizationService->getOrganizationByUser($organization_id, $user);
-            if (!$userOrg || $userOrg->role !== 'admin') {
-                return $this->responseService->json(false, 'Admin access required', null, 403);
-            }
-            
-            $subscription = $this->billingService->getOrganizationSubscription($organization);
-            
-            if (!$subscription || !$subscription->isActive()) {
-                return $this->responseService->json(false, 'No active subscription', null, 400);
-            }
-            
-            $seatsToAdd = (int) ($data['seats'] ?? 0);
-            if ($seatsToAdd <= 0) {
-                return $this->responseService->json(false, 'Invalid number of seats', null, 400);
-            }
-            
-            $this->stripeService->addSeats($subscription, $seatsToAdd);
-            
-            return $this->responseService->json(true, 'Seats added successfully', [
-                'new_total_seats' => $subscription->getTotalSeats()
             ]);
         } catch (\Exception $e) {
             return $this->responseService->json(false, $e->getMessage(), null, 500);
@@ -206,7 +171,6 @@ class BillingController extends AbstractController
         }
     }
 
-
     #[Route('/organizations/{organization_id}/seats', name: 'billing_purchase_seats#', methods: ['POST'])]
     public function purchaseSeats(int $organization_id, Request $request): JsonResponse
     {
@@ -294,4 +258,94 @@ class BillingController extends AbstractController
         }
     }
 
+    // TEST METHODS - Remove these in production
+    #[Route('/test/webhook', name: 'billing_test_webhook#', methods: ['GET'])]
+    public function testWebhook(Request $request): JsonResponse
+    {
+        $logFile = '/tmp/test_webhook.log';
+        
+        try {
+            file_put_contents($logFile, "=== TEST START " . date('Y-m-d H:i:s') . " ===\n", FILE_APPEND);
+            
+            // Test 1: Can we access organization 47?
+            $org = $this->organizationService->getOne(47);
+            $orgResult = $org ? "Organization 47 found: " . $org->getName() : "Organization 47 NOT FOUND";
+            file_put_contents($logFile, "Test 1 - Organization: $orgResult\n", FILE_APPEND);
+            
+            // Test 2: Can we access plan 3?
+            $plan = $this->billingService->getPlanBySlug('business');
+            if (!$plan) {
+                // Try by ID
+                $planRepo = $this->entityManager->getRepository(\App\Plugins\Billing\Entity\BillingPlanEntity::class);
+                $plan = $planRepo->find(3);
+            }
+            $planResult = $plan ? "Plan found: " . $plan->getName() : "Plan NOT FOUND";
+            file_put_contents($logFile, "Test 2 - Plan: $planResult\n", FILE_APPEND);
+            
+            // Test 3: Try to create a subscription manually
+            if ($org && $plan) {
+                $subscription = new OrganizationSubscriptionEntity();
+                $subscription->setOrganization($org);
+                $subscription->setPlan($plan);
+                $subscription->setStripeSubscriptionId('test_sub_' . time());
+                $subscription->setStripeCustomerId('test_cus_' . time());
+                $subscription->setStatus('active');
+                $subscription->setAdditionalSeats(5);
+                
+                $this->entityManager->persist($subscription);
+                $this->entityManager->flush();
+                
+                file_put_contents($logFile, "Test 3 - Subscription created with ID: " . $subscription->getId() . "\n", FILE_APPEND);
+                
+                return $this->responseService->json(true, 'Test successful', [
+                    'subscription_id' => $subscription->getId(),
+                    'organization' => $orgResult,
+                    'plan' => $planResult
+                ]);
+            } else {
+                file_put_contents($logFile, "Test 3 - Could not create subscription, missing org or plan\n", FILE_APPEND);
+                
+                return $this->responseService->json(false, 'Test failed', [
+                    'organization' => $orgResult,
+                    'plan' => $planResult
+                ]);
+            }
+            
+        } catch (\Exception $e) {
+            file_put_contents($logFile, "ERROR: " . $e->getMessage() . "\n" . $e->getTraceAsString() . "\n", FILE_APPEND);
+            
+            return $this->responseService->json(false, 'Test error', [
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    #[Route('/test/cleanup', name: 'billing_test_cleanup#', methods: ['GET'])]
+    public function cleanupTest(Request $request): JsonResponse
+    {
+        try {
+            // Clean up test subscriptions
+            $qb = $this->entityManager->createQueryBuilder();
+            $qb->select('s')
+               ->from(OrganizationSubscriptionEntity::class, 's')
+               ->where('s.stripeSubscriptionId LIKE :pattern')
+               ->setParameter('pattern', 'test_sub_%');
+               
+            $testSubs = $qb->getQuery()->getResult();
+                
+            foreach ($testSubs as $sub) {
+                $this->entityManager->remove($sub);
+            }
+            
+            $this->entityManager->flush();
+            
+            return $this->responseService->json(true, 'Cleanup complete', [
+                'cleaned' => count($testSubs)
+            ]);
+        } catch (\Exception $e) {
+            return $this->responseService->json(false, 'Cleanup failed', [
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
 }
