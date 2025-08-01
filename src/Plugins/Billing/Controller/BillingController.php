@@ -124,6 +124,7 @@ class BillingController extends AbstractController
             }
             
             $planSlug = $data['plan_slug'] ?? '';
+            $additionalSeats = (int) ($data['additional_seats'] ?? 0);
             
             $plan = $this->billingService->getPlanBySlug($planSlug);
             if (!$plan || !$plan->getStripePriceId()) {
@@ -133,7 +134,7 @@ class BillingController extends AbstractController
             $checkoutUrl = $this->stripeService->createCheckoutSession(
                 $organization,
                 $plan,
-                0
+                $additionalSeats
             );
             
             return $this->responseService->json(true, 'Checkout session created', [

@@ -103,17 +103,16 @@ class BillingService
      */
     public function countOrganizationMembers(OrganizationEntity $organization): int
     {
-        $result = $this->crudManager->findMany(
+        // Get all members using CrudManager
+        $members = $this->crudManager->findMany(
             'App\Plugins\Organizations\Entity\UserOrganizationEntity',
             [],
             1,
-            1,
-            ['organization' => $organization],
-            null,
-            true
+            9999,  // High limit to get all
+            ['organization' => $organization]
         );
         
-        return $result['total'] ?? 0;
+        return count($members);
     }
 
     /**
@@ -121,18 +120,20 @@ class BillingService
      */
     public function countPendingInvitations(OrganizationEntity $organization): int
     {
-        // Count using query builder since we need to check organization for both org and team invites
-        $qb = $this->entityManager->createQueryBuilder();
-        $qb->select('COUNT(i.id)')
-           ->from('App\Plugins\Invitations\Entity\InvitationEntity', 'i')
-           ->where('i.organization = :organization')
-           ->andWhere('i.status = :status')
-           ->andWhere('i.deleted = :deleted')
-           ->setParameter('organization', $organization)
-           ->setParameter('status', 'pending')
-           ->setParameter('deleted', false);
-           
-        return (int) $qb->getQuery()->getSingleScalarResult();
+        // Get all pending invitations using CrudManager
+        $invitations = $this->crudManager->findMany(
+            'App\Plugins\Invitations\Entity\InvitationEntity',
+            [],
+            1,
+            9999,  // High limit to get all
+            [
+                'organization' => $organization,
+                'status' => 'pending',
+                'deleted' => false
+            ]
+        );
+        
+        return count($invitations);
     }
 
     /**

@@ -19,6 +19,8 @@ use App\Plugins\Invitations\Service\InvitationService;
 use App\Plugins\Teams\Service\TeamService;
 use App\Plugins\Teams\Service\UserTeamService;
 use App\Plugins\Teams\Service\TeamPermissionService;
+use App\Plugins\Billing\Service\BillingService;
+
 
 
 #[Route('/api/organizations/{organization_id}', requirements: ['organization_id' => '\d+'])]
@@ -35,6 +37,7 @@ class OrganizationMemberController extends AbstractController
     private TeamService $teamService;             
     private UserTeamService $userTeamService;     
     private TeamPermissionService $permissionService;
+    private BillingService $billingService;
 
     public function __construct(
         ResponseService $responseService,
@@ -47,7 +50,9 @@ class OrganizationMemberController extends AbstractController
         InvitationService $invitationService,  
         TeamService $teamService,             
         UserTeamService $userTeamService,      
-        TeamPermissionService $permissionService
+        TeamPermissionService $permissionService,
+        BillingService $billingService
+
     ) {
         $this->responseService = $responseService;
         $this->organizationService = $organizationService;
@@ -60,6 +65,7 @@ class OrganizationMemberController extends AbstractController
         $this->teamService = $teamService;              
         $this->userTeamService = $userTeamService;  
         $this->permissionService = $permissionService;
+        $this->billingService = $billingService;
     }
 
     #[Route('/members', name: 'organization_members_list#', methods: ['GET'])]
@@ -180,7 +186,7 @@ class OrganizationMemberController extends AbstractController
         }
     }
 
-    #[Route('/members/invite-OLD', name: 'organization_members_invite#', methods: ['POST'])]
+    #[Route('/members/invite-OLD', name: 'organization_members_invite-old#', methods: ['POST'])]
     public function inviteMemberOld(int $organization_id, Request $request): JsonResponse
     {
         $user = $request->attributes->get('user');
@@ -540,7 +546,7 @@ class OrganizationMemberController extends AbstractController
 
 
 
-    #[Route('/teams/{team_id}/members/inviteOld', name: 'team_members_invite#', methods: ['POST'], requirements: ['team_id' => '\d+'])]
+    #[Route('/teams/{team_id}/members/inviteOld', name: 'team_members_invite-old#', methods: ['POST'], requirements: ['team_id' => '\d+'])]
     public function inviteTeamMemberOld(int $organization_id, int $team_id, Request $request): JsonResponse
     {
         $user = $request->attributes->get('user');

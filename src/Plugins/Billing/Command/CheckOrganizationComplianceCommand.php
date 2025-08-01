@@ -7,7 +7,7 @@ use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 use App\Plugins\Billing\Service\BillingService;
-use App\Plugins\Emails\Service\EmailService;
+use App\Plugins\Email\Service\EmailService;
 use Doctrine\ORM\EntityManagerInterface;
 use App\Plugins\Organizations\Entity\OrganizationEntity;
 

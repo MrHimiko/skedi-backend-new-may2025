@@ -80,8 +80,14 @@ class BillingPlanEntity
             'id' => $this->id,
             'name' => $this->name,
             'slug' => $this->slug,
+            'description' => $this->description ?? null,
             'price_monthly' => $this->priceMonthly,
             'included_seats' => $this->includedSeats,
+            'stripe_price_id' => $this->stripePriceId,
+            'stripe_product_id' => $this->stripeProductId,
+            'is_active' => $this->isActive ?? true,
+            'created_at' => $this->createdAt?->format('Y-m-d H:i:s'),
+            'updated_at' => $this->updatedAt?->format('Y-m-d H:i:s'),
         ];
     }
 }

@@ -192,4 +192,39 @@ class OrganizationSubscriptionEntity
     {
         return 1 + $this->additionalSeats;
     }
+
+    public function toArray(): array
+    {
+        $data = [
+            'id' => $this->id,
+            'organization_id' => $this->organization?->getId(),
+            'stripe_subscription_id' => $this->stripeSubscriptionId,
+            'stripe_customer_id' => $this->stripeCustomerId,
+            'status' => $this->status,
+            'is_active' => $this->isActive(),
+            'additional_seats' => $this->additionalSeats,
+            'total_seats' => $this->getTotalSeats(),
+            'current_period_start' => $this->currentPeriodStart?->format('Y-m-d H:i:s'),
+            'current_period_end' => $this->currentPeriodEnd?->format('Y-m-d H:i:s'),
+            'created_at' => $this->createdAt->format('Y-m-d H:i:s'),
+            'updated_at' => $this->updatedAt->format('Y-m-d H:i:s'),
+        ];
+        
+        // Add plan details if plan exists
+        if ($this->plan) {
+            $data['plan'] = [
+                'id' => $this->plan->getId(),
+                'name' => $this->plan->getName(),
+                'slug' => $this->plan->getSlug(),
+                'price_monthly' => $this->plan->getPriceMonthly(),
+                'included_seats' => $this->plan->getIncludedSeats(),
+            ];
+        } else {
+            $data['plan'] = null;
+        }
+        
+        return $data;
+    }
+
+
 }
