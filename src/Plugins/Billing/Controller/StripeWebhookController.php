@@ -38,6 +38,7 @@ class StripeWebhookController extends AbstractController
         file_put_contents($logFile, json_encode($debugInfo, JSON_PRETTY_PRINT) . "\n", FILE_APPEND);
         
         try {
+            file_put_contents($logFile, "Calling webhookService->handleWebhook\n", FILE_APPEND);
             $this->webhookService->handleWebhook($payload, $signature);
             
             file_put_contents($logFile, "SUCCESS: Webhook processed\n", FILE_APPEND);
@@ -59,4 +60,28 @@ class StripeWebhookController extends AbstractController
             return new Response('Webhook received (with errors)', 200);
         }
     }
+
+    #[Route('/test/webhook-service', name: 'test_webhook_service', methods: ['GET'])]
+    public function testWebhookService(): JsonResponse
+    {
+        try {
+            // Test if service is initialized properly
+            $reflection = new \ReflectionClass($this->webhookService);
+            $logFileProperty = $reflection->getProperty('logFile');
+            $logFileProperty->setAccessible(true);
+            $logFile = $logFileProperty->getValue($this->webhookService);
+            
+            return new JsonResponse([
+                'success' => true,
+                'log_file' => $logFile,
+                'service_class' => get_class($this->webhookService)
+            ]);
+        } catch (\Exception $e) {
+            return new JsonResponse([
+                'success' => false,
+                'error' => $e->getMessage()
+            ]);
+        }
+    }
+
 }

@@ -1,429 +1,204 @@
 <?php
-// src/Plugins/Billing/Controller/BillingController.php
+// src/Plugins/Billing/Service/BillingService.php
 
-namespace App\Plugins\Billing\Controller;
+namespace App\Plugins\Billing\Service;
 
-use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
-use Symfony\Component\HttpFoundation\JsonResponse;
-use Symfony\Component\HttpFoundation\Request;
-use Symfony\Component\Routing\Annotation\Route;
-use App\Service\ResponseService;
-use App\Plugins\Billing\Service\BillingService;
-use App\Plugins\Billing\Service\StripeService;
-use App\Plugins\Organizations\Service\OrganizationService;
-use App\Plugins\Organizations\Service\UserOrganizationService;
-use Doctrine\ORM\EntityManagerInterface;
+use App\Plugins\Organizations\Entity\OrganizationEntity;
 use App\Plugins\Billing\Entity\OrganizationSubscriptionEntity;
+use App\Plugins\Billing\Entity\BillingPlanEntity;
+use App\Plugins\Billing\Repository\BillingPlanRepository;
+use App\Plugins\Billing\Repository\OrganizationSubscriptionRepository;
+use App\Service\CrudManager;
+use App\Plugins\Invitations\Repository\InvitationRepository;
+use Doctrine\ORM\EntityManagerInterface;
 
-#[Route('/api/billing')]
-class BillingController extends AbstractController
+class BillingService
 {
+    const PLAN_FREE = 1;
+    const PLAN_PROFESSIONAL = 2;
+    const PLAN_BUSINESS = 3;
+    const PLAN_ENTERPRISE = 4;
+
+    private array $planLevels = [
+        'free' => self::PLAN_FREE,
+        'professional' => self::PLAN_PROFESSIONAL,
+        'business' => self::PLAN_BUSINESS,
+        'enterprise' => self::PLAN_ENTERPRISE
+    ];
+
     public function __construct(
-        private ResponseService $responseService,
-        private BillingService $billingService,
-        private StripeService $stripeService,
-        private OrganizationService $organizationService,
-        private UserOrganizationService $userOrganizationService,
+        private CrudManager $crudManager,
+        private BillingPlanRepository $planRepository,
+        private OrganizationSubscriptionRepository $subscriptionRepository,
+        private InvitationRepository $invitationRepository,
         private EntityManagerInterface $entityManager
     ) {}
 
-    #[Route('/plans', name: 'billing_plans#', methods: ['GET'])]
-    public function getPlans(): JsonResponse
+    public function getOrganizationPlanLevel(OrganizationEntity $organization): int
     {
-        try {
-            $plans = $this->billingService->getAvailablePlans();
-            
-            $plansArray = array_map(function($plan) {
-                return $plan->toArray();
-            }, $plans);
-            
-            return $this->responseService->json(true, 'Plans retrieved', $plansArray);
-        } catch (\Exception $e) {
-            return $this->responseService->json(false, $e->getMessage(), null, 500);
+        $subscription = $this->subscriptionRepository->findOneBy([
+            'organization' => $organization
+        ]);
+        
+        if (!$subscription || !$subscription->isActive()) {
+            return self::PLAN_FREE;
         }
+        
+        $planSlug = $subscription->getPlan()->getSlug();
+        return $this->planLevels[$planSlug] ?? self::PLAN_FREE;
     }
 
-    #[Route('/organizations/{organization_id}/subscription', name: 'billing_get_subscription#', methods: ['GET'])]
-    public function getSubscription(int $organization_id, Request $request): JsonResponse
+    public function getOrganizationSubscription(OrganizationEntity $organization): ?OrganizationSubscriptionEntity
     {
-        $user = $request->attributes->get('user');
-        
-        try {
-            $organization = $this->organizationService->getOne($organization_id);
-            if (!$organization) {
-                return $this->responseService->json(false, 'Organization not found', null, 404);
-            }
-            
-            if (!$this->userOrganizationService->getOrganizationByUser($organization_id, $user)) {
-                return $this->responseService->json(false, 'Access denied', null, 403);
-            }
-            
-            $subscription = $this->billingService->getOrganizationSubscription($organization);
-            $planLevel = $this->billingService->getOrganizationPlanLevel($organization);
-            
-            return $this->responseService->json(true, 'success', [
-                'subscription' => $subscription?->toArray(),
-                'plan_level' => $planLevel,
-                'can_add_members' => $this->billingService->canAddMember($organization)
-            ]);
-        } catch (\Exception $e) {
-            return $this->responseService->json(false, $e->getMessage(), null, 500);
-        }
+        return $this->subscriptionRepository->findOneBy(['organization' => $organization]);
     }
 
-    #[Route('/organizations/{organization_id}/checkout', name: 'billing_checkout#', methods: ['POST'])]
-    public function createCheckoutSession(int $organization_id, Request $request): JsonResponse
+    /**
+     * Check if organization can add a new member
+     */
+    public function canAddMember(OrganizationEntity $organization): bool
     {
-        $user = $request->attributes->get('user');
-        $data = $request->attributes->get('data');
-        
-        try {
-            $organization = $this->organizationService->getOne($organization_id);
-            if (!$organization) {
-                return $this->responseService->json(false, 'Organization not found', null, 404);
-            }
-            
-            $userOrg = $this->userOrganizationService->getOrganizationByUser($organization_id, $user);
-            if (!$userOrg || $userOrg->role !== 'admin') {
-                return $this->responseService->json(false, 'Admin access required', null, 403);
-            }
-            
-            $planSlug = $data['plan_slug'] ?? '';
-            $additionalSeats = (int) ($data['additional_seats'] ?? 0);
-            
-            $plan = $this->billingService->getPlanBySlug($planSlug);
-            if (!$plan || !$plan->getStripePriceId()) {
-                return $this->responseService->json(false, 'Invalid plan selected', null, 400);
-            }
-            
-            $checkoutUrl = $this->stripeService->createCheckoutSession(
-                $organization,
-                $plan,
-                $additionalSeats
-            );
-            
-            return $this->responseService->json(true, 'Checkout session created', [
-                'checkout_url' => $checkoutUrl
-            ]);
-        } catch (\Exception $e) {
-            return $this->responseService->json(false, $e->getMessage(), null, 500);
-        }
+        $seatInfo = $this->getOrganizationSeatInfo($organization);
+        return $seatInfo['used'] < $seatInfo['total'];
     }
 
-    #[Route('/stripe/session-verify', name: 'billing_verify_session#', methods: ['POST'])]
-    public function verifyStripeSession(Request $request): JsonResponse
+    /**
+     * Get detailed seat information for an organization
+     */
+    public function getOrganizationSeatInfo(OrganizationEntity $organization): array
     {
-        $user = $request->attributes->get('user');
-        $data = $request->attributes->get('data');
+        $subscription = $this->getOrganizationSubscription($organization);
+        $currentMembers = $this->getCurrentMemberCount($organization);
+        $pendingInvitations = $this->getPendingInvitationCount($organization);
         
-        try {
-            $sessionId = $data['session_id'] ?? '';
-            $organizationId = $data['organization_id'] ?? 0;
-            
-            $organization = $this->organizationService->getOne($organizationId);
-            if (!$organization) {
-                return $this->responseService->json(false, 'Organization not found', null, 404);
-            }
-            
-            if (!$this->userOrganizationService->getOrganizationByUser($organizationId, $user)) {
-                return $this->responseService->json(false, 'Access denied', null, 403);
-            }
-            
-            return $this->responseService->json(true, 'Payment verified', [
-                'plan_name' => 'Professional'
-            ]);
-        } catch (\Exception $e) {
-            return $this->responseService->json(false, $e->getMessage(), null, 500);
-        }
-    }
-
-    #[Route('/organizations/{organization_id}/portal', name: 'billing_portal#', methods: ['POST'])]
-    public function createPortalSession(int $organization_id, Request $request): JsonResponse
-    {
-        $user = $request->attributes->get('user');
-        
-        try {
-            $organization = $this->organizationService->getOne($organization_id);
-            if (!$organization) {
-                return $this->responseService->json(false, 'Organization not found', null, 404);
-            }
-            
-            $userOrg = $this->userOrganizationService->getOrganizationByUser($organization_id, $user);
-            if (!$userOrg || $userOrg->role !== 'admin') {
-                return $this->responseService->json(false, 'Admin access required', null, 403);
-            }
-            
-            $subscription = $this->billingService->getOrganizationSubscription($organization);
-            
-            if (!$subscription || !$subscription->getStripeCustomerId()) {
-                return $this->responseService->json(false, 'No billing account found', null, 400);
-            }
-            
-            $portalUrl = $this->stripeService->createCustomerPortalSession(
-                $subscription->getStripeCustomerId()
-            );
-            
-            return $this->responseService->json(true, 'Portal session created', [
-                'url' => $portalUrl
-            ]);
-        } catch (\Exception $e) {
-            return $this->responseService->json(false, $e->getMessage(), null, 500);
-        }
-    }
-
-    #[Route('/organizations/{organization_id}/seats', name: 'billing_purchase_seats#', methods: ['POST'])]
-    public function purchaseSeats(int $organization_id, Request $request): JsonResponse
-    {
-        $user = $request->attributes->get('user');
-        $data = $request->attributes->get('data');
-        
-        try {
-            $organization = $this->organizationService->getOne($organization_id);
-            if (!$organization) {
-                return $this->responseService->json(false, 'Organization not found', null, 404);
-            }
-            
-            // Check admin access
-            $userOrg = $this->userOrganizationService->getOrganizationByUser($organization_id, $user);
-            if (!$userOrg || $userOrg->role !== 'admin') {
-                return $this->responseService->json(false, 'Admin access required', null, 403);
-            }
-            
-            // Validate seats input
-            $seatsToAdd = (int) ($data['seats'] ?? 0);
-            if ($seatsToAdd <= 0 || $seatsToAdd > 100) {
-                return $this->responseService->json(false, 'Invalid number of seats. Must be between 1 and 100.', null, 400);
-            }
-            
-            // Get current subscription
-            $subscription = $this->billingService->getOrganizationSubscription($organization);
-            
-            if (!$subscription || !$subscription->isActive()) {
-                // No active subscription - create new subscription with seats
-                // First, they need a plan
-                return $this->responseService->json(
-                    false, 
-                    'Please select a subscription plan first before adding seats.', 
-                    ['requires_plan' => true],
-                    400
-                );
-            }
-            
-            // Check if immediate purchase or Stripe checkout
-            if ($subscription->getStripeCustomerId()) {
-                // Existing customer - update subscription directly
-                try {
-                    $this->stripeService->addSeats($subscription, $seatsToAdd);
-                    
-                    return $this->responseService->json(true, 'Seats added successfully', [
-                        'new_total_seats' => $subscription->getTotalSeats(),
-                        'seats_added' => $seatsToAdd
-                    ]);
-                } catch (\Exception $e) {
-                    // If direct update fails, fall back to checkout
-                    $checkoutUrl = $this->stripeService->createSeatsCheckoutSession($subscription, $seatsToAdd);
-                    
-                    return $this->responseService->json(true, 'Redirecting to checkout', [
-                        'checkout_url' => $checkoutUrl
-                    ]);
-                }
-            } else {
-                // New customer - create checkout session
-                $checkoutUrl = $this->stripeService->createSeatsCheckoutSession($subscription, $seatsToAdd);
-                
-                return $this->responseService->json(true, 'Redirecting to checkout', [
-                    'checkout_url' => $checkoutUrl
-                ]);
-            }
-        } catch (\Exception $e) {
-            return $this->responseService->json(false, $e->getMessage(), null, 500);
-        }
-    }
-
-    #[Route('/billing/seats/success', name: 'billing_seats_success#', methods: ['GET'])]
-    public function seatsCheckoutSuccess(Request $request): JsonResponse
-    {
-        $sessionId = $request->query->get('session_id');
-        
-        if (!$sessionId) {
-            return $this->responseService->json(false, 'Invalid session', null, 400);
-        }
-        
-        try {
-            $this->stripeService->processSeatsCheckout($sessionId);
-            
-            return $this->responseService->json(true, 'Seats purchased successfully');
-        } catch (\Exception $e) {
-            return $this->responseService->json(false, $e->getMessage(), null, 500);
-        }
-    }
-
-    // TEST METHODS - Remove these in production
-    #[Route('/test/webhook', name: 'billing_test_webhook#', methods: ['GET'])]
-    public function testWebhook(Request $request): JsonResponse
-    {
-        $logFile = './test_webhook.log';
-        
-        try {
-            file_put_contents($logFile, "=== TEST START " . date('Y-m-d H:i:s') . " ===\n", FILE_APPEND);
-            
-            // Test 1: Can we access organization 47?
-            $org = $this->organizationService->getOne(47);
-            $orgResult = $org ? "Organization 47 found: " . $org->getName() : "Organization 47 NOT FOUND";
-            file_put_contents($logFile, "Test 1 - Organization: $orgResult\n", FILE_APPEND);
-            
-            // Test 2: Can we access plan 3?
-            $plan = $this->billingService->getPlanBySlug('business');
-            if (!$plan) {
-                // Try by ID
-                $planRepo = $this->entityManager->getRepository(\App\Plugins\Billing\Entity\BillingPlanEntity::class);
-                $plan = $planRepo->find(3);
-            }
-            $planResult = $plan ? "Plan found: " . $plan->getName() : "Plan NOT FOUND";
-            file_put_contents($logFile, "Test 2 - Plan: $planResult\n", FILE_APPEND);
-            
-            // Test 3: Try to create a subscription manually
-            if ($org && $plan) {
-                $subscription = new OrganizationSubscriptionEntity();
-                $subscription->setOrganization($org);
-                $subscription->setPlan($plan);
-                $subscription->setStripeSubscriptionId('test_sub_' . time());
-                $subscription->setStripeCustomerId('test_cus_' . time());
-                $subscription->setStatus('active');
-                $subscription->setAdditionalSeats(5);
-                
-                $this->entityManager->persist($subscription);
-                $this->entityManager->flush();
-                
-                file_put_contents($logFile, "Test 3 - Subscription created with ID: " . $subscription->getId() . "\n", FILE_APPEND);
-                
-                return $this->responseService->json(true, 'Test successful', [
-                    'subscription_id' => $subscription->getId(),
-                    'organization' => $orgResult,
-                    'plan' => $planResult,
-                    'log_file' => 'Check test_webhook.log in project root'
-                ]);
-            } else {
-                file_put_contents($logFile, "Test 3 - Could not create subscription, missing org or plan\n", FILE_APPEND);
-                
-                return $this->responseService->json(false, 'Test failed', [
-                    'organization' => $orgResult,
-                    'plan' => $planResult,
-                    'log_file' => 'Check test_webhook.log in project root'
-                ]);
-            }
-            
-        } catch (\Exception $e) {
-            file_put_contents($logFile, "ERROR: " . $e->getMessage() . "\n" . $e->getTraceAsString() . "\n", FILE_APPEND);
-            
-            return $this->responseService->json(false, 'Test error', [
-                'error' => $e->getMessage(),
-                'log_file' => 'Check test_webhook.log in project root'
-            ], 500);
-        }
-    }
-
-    #[Route('/test/webhook-simulate', name: 'billing_test_webhook_simulate#', methods: ['GET'])]
-    public function testWebhookSimulate(Request $request): JsonResponse
-    {
-        $logFile = './webhook_simulate.log';
-        
-        try {
-            file_put_contents($logFile, "=== SIMULATE START " . date('Y-m-d H:i:s') . " ===\n");
-            
-            // Simulate the exact webhook data
-            $webhookData = [
-                'id' => 'cs_test_simulate',
-                'mode' => 'subscription',
-                'subscription' => 'sub_test_simulate',
-                'customer' => 'cus_test_simulate',
-                'metadata' => [
-                    'organization_id' => '47',
-                    'plan_id' => '3',
-                    'additional_seats' => '6'
-                ]
+        if (!$subscription || !$subscription->isActive()) {
+            // Free plan: 1 seat total
+            return [
+                'total' => 1,
+                'used' => $currentMembers + $pendingInvitations,
+                'available' => max(0, 1 - ($currentMembers + $pendingInvitations)),
+                'members' => $currentMembers,
+                'pending' => $pendingInvitations,
+                'additional_seats' => 0
             ];
-            
-            file_put_contents($logFile, "Webhook data: " . json_encode($webhookData, JSON_PRETTY_PRINT) . "\n", FILE_APPEND);
-            
-            // Get services to simulate webhook processing
-            $org = $this->organizationService->getOne(47);
-            $plan = $this->entityManager->getRepository(\App\Plugins\Billing\Entity\BillingPlanEntity::class)->find(3);
-            
-            if ($org && $plan) {
-                // Check if subscription already exists
-                $existingSub = $this->entityManager->getRepository(OrganizationSubscriptionEntity::class)
-                    ->findOneBy(['organization' => $org]);
-                    
-                if ($existingSub) {
-                    file_put_contents($logFile, "Found existing subscription ID: " . $existingSub->getId() . "\n", FILE_APPEND);
-                    $subscription = $existingSub;
-                } else {
-                    file_put_contents($logFile, "Creating new subscription\n", FILE_APPEND);
-                    $subscription = new OrganizationSubscriptionEntity();
-                    $subscription->setOrganization($org);
-                }
-                
-                $subscription->setPlan($plan);
-                $subscription->setStripeSubscriptionId($webhookData['subscription']);
-                $subscription->setStripeCustomerId($webhookData['customer']);
-                $subscription->setStatus('active');
-                $subscription->setAdditionalSeats((int)$webhookData['metadata']['additional_seats']);
-                
-                $this->entityManager->persist($subscription);
-                $this->entityManager->flush();
-                
-                file_put_contents($logFile, "Subscription saved with ID: " . $subscription->getId() . "\n", FILE_APPEND);
-                
-                return $this->responseService->json(true, 'Webhook simulation successful', [
-                    'subscription_id' => $subscription->getId(),
-                    'plan' => $plan->getName(),
-                    'seats' => $subscription->getAdditionalSeats(),
-                    'log_file' => 'Check webhook_simulate.log in project root'
-                ]);
-            } else {
-                file_put_contents($logFile, "ERROR: Could not find org or plan\n", FILE_APPEND);
-                return $this->responseService->json(false, 'Simulation failed - missing data', [
-                    'log_file' => 'Check webhook_simulate.log in project root'
-                ]);
-            }
-            
-        } catch (\Exception $e) {
-            file_put_contents($logFile, "ERROR: " . $e->getMessage() . "\n" . $e->getTraceAsString() . "\n", FILE_APPEND);
-            
-            return $this->responseService->json(false, 'Simulation error', [
-                'error' => $e->getMessage(),
-                'log_file' => 'Check webhook_simulate.log in project root'
-            ], 500);
         }
+        
+        // Paid plan: base seats + additional seats
+        $baseSeat = 1; // All plans include 1 base seat
+        $additionalSeats = $subscription->getAdditionalSeats();
+        $totalSeats = $baseSeat + $additionalSeats;
+        $usedSeats = $currentMembers + $pendingInvitations;
+        
+        return [
+            'total' => $totalSeats,
+            'used' => $usedSeats,
+            'available' => max(0, $totalSeats - $usedSeats),
+            'members' => $currentMembers,
+            'pending' => $pendingInvitations,
+            'additional_seats' => $additionalSeats
+        ];
     }
 
-    #[Route('/test/cleanup', name: 'billing_test_cleanup#', methods: ['GET'])]
-    public function cleanupTest(Request $request): JsonResponse
+    /**
+     * Get count of active members in organization
+     */
+    private function getCurrentMemberCount(OrganizationEntity $organization): int
     {
-        try {
-            // Clean up test subscriptions
-            $qb = $this->entityManager->createQueryBuilder();
-            $qb->select('s')
-               ->from(OrganizationSubscriptionEntity::class, 's')
-               ->where('s.stripeSubscriptionId LIKE :pattern')
-               ->setParameter('pattern', 'test_sub_%');
-               
-            $testSubs = $qb->getQuery()->getResult();
-                
-            foreach ($testSubs as $sub) {
-                $this->entityManager->remove($sub);
+        return $this->entityManager->createQueryBuilder()
+            ->select('COUNT(uo.id)')
+            ->from('App\Plugins\Organizations\Entity\UserOrganizationEntity', 'uo')
+            ->where('uo.organization = :organization')
+            ->setParameter('organization', $organization)
+            ->getQuery()
+            ->getSingleScalarResult();
+    }
+
+    /**
+     * Get count of pending invitations for organization
+     */
+    private function getPendingInvitationCount(OrganizationEntity $organization): int
+    {
+        return $this->entityManager->createQueryBuilder()
+            ->select('COUNT(i.id)')
+            ->from('App\Plugins\Invitations\Entity\InvitationEntity', 'i')
+            ->where('i.organization = :organization')
+            ->andWhere('i.status = :status')
+            ->andWhere('i.deleted = false')
+            ->setParameter('organization', $organization)
+            ->setParameter('status', 'pending')
+            ->getQuery()
+            ->getSingleScalarResult();
+    }
+
+    /**
+     * Check if organization is compliant with seat limits
+     * Returns array with compliance status and details
+     */
+    public function checkOrganizationCompliance(OrganizationEntity $organization): array
+    {
+        $seatInfo = $this->getOrganizationSeatInfo($organization);
+        
+        $isCompliant = $seatInfo['used'] <= $seatInfo['total'];
+        $overageCount = max(0, $seatInfo['used'] - $seatInfo['total']);
+        
+        return [
+            'is_compliant' => $isCompliant,
+            'seat_info' => $seatInfo,
+            'overage_count' => $overageCount,
+            'required_additional_seats' => $overageCount
+        ];
+    }
+
+    /**
+     * Get organizations that are non-compliant (more members than seats)
+     */
+    public function getNonCompliantOrganizations(): array
+    {
+        $organizations = $this->entityManager->getRepository(OrganizationEntity::class)
+            ->findBy(['deleted' => false]);
+            
+        $nonCompliant = [];
+        
+        foreach ($organizations as $organization) {
+            $compliance = $this->checkOrganizationCompliance($organization);
+            if (!$compliance['is_compliant']) {
+                $nonCompliant[] = [
+                    'organization' => $organization,
+                    'compliance' => $compliance
+                ];
             }
-            
-            $this->entityManager->flush();
-            
-            return $this->responseService->json(true, 'Cleanup complete', [
-                'cleaned' => count($testSubs)
-            ]);
-        } catch (\Exception $e) {
-            return $this->responseService->json(false, 'Cleanup failed', [
-                'error' => $e->getMessage()
-            ], 500);
         }
+        
+        return $nonCompliant;
+    }
+
+    public function getPlanBySlug(string $slug): ?BillingPlanEntity
+    {
+        return $this->planRepository->findOneBy(['slug' => $slug]);
+    }
+
+    public function getPlanByStripePriceId(string $stripePriceId): ?BillingPlanEntity
+    {
+        return $this->planRepository->findOneBy(['stripe_price_id' => $stripePriceId]);
+    }
+
+    public function getAvailablePlans(): array
+    {
+        return $this->planRepository->findBy(
+            ['slug' => ['professional', 'business']], 
+            ['priceMonthly' => 'ASC']
+        );
+    }
+
+    /**
+     * Calculate how many additional seats are needed
+     */
+    public function calculateRequiredSeats(OrganizationEntity $organization, int $newInvitations = 1): int
+    {
+        $seatInfo = $this->getOrganizationSeatInfo($organization);
+        $totalNeeded = $seatInfo['used'] + $newInvitations;
+        $currentTotal = $seatInfo['total'];
+        
+        return max(0, $totalNeeded - $currentTotal);
     }
 }

@@ -13,7 +13,7 @@ use Doctrine\ORM\EntityManagerInterface;
 class StripeWebhookService
 {
     private StripeClient $stripe;
-    private string $logFile = './webhook_debug.log';
+    private string $logFile = '/tmp/webhook_debug.log';
     
     public function __construct(
         private string $stripeSecretKey,
@@ -214,7 +214,12 @@ class StripeWebhookService
         }
         
         // Update seat count from subscription items
-        $this->updateSeatCountFromSubscription($orgSubscription, $subscription);
+        if (is_array($subscription)) {
+            $this->updateSeatCountFromSubscription($orgSubscription, $subscription);
+        } else {
+            // If it's a Stripe object, convert to array
+            $this->updateSeatCountFromSubscription($orgSubscription, $subscription->toArray());
+        }
         
         $this->entityManager->flush();
         
@@ -289,7 +294,12 @@ class StripeWebhookService
             }
             
             // Update seat count
-            $this->updateSeatCountFromSubscription($orgSubscription, $subscription);
+            if (is_array($subscription)) {
+                $this->updateSeatCountFromSubscription($orgSubscription, $subscription);
+            } else {
+                // If it's a Stripe object, convert to array
+                $this->updateSeatCountFromSubscription($orgSubscription, $subscription->toArray());
+            }
             
             $this->entityManager->persist($orgSubscription);
             $this->entityManager->flush();

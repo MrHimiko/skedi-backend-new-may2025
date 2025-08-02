@@ -262,7 +262,7 @@ class BillingController extends AbstractController
     #[Route('/test/webhook', name: 'billing_test_webhook#', methods: ['GET'])]
     public function testWebhook(Request $request): JsonResponse
     {
-        $logFile = '/tmp/test_webhook.log';
+        $logFile = './test_webhook.log';
         
         try {
             file_put_contents($logFile, "=== TEST START " . date('Y-m-d H:i:s') . " ===\n", FILE_APPEND);
@@ -300,14 +300,16 @@ class BillingController extends AbstractController
                 return $this->responseService->json(true, 'Test successful', [
                     'subscription_id' => $subscription->getId(),
                     'organization' => $orgResult,
-                    'plan' => $planResult
+                    'plan' => $planResult,
+                    'log_file' => 'Check test_webhook.log in project root'
                 ]);
             } else {
                 file_put_contents($logFile, "Test 3 - Could not create subscription, missing org or plan\n", FILE_APPEND);
                 
                 return $this->responseService->json(false, 'Test failed', [
                     'organization' => $orgResult,
-                    'plan' => $planResult
+                    'plan' => $planResult,
+                    'log_file' => 'Check test_webhook.log in project root'
                 ]);
             }
             
@@ -315,7 +317,86 @@ class BillingController extends AbstractController
             file_put_contents($logFile, "ERROR: " . $e->getMessage() . "\n" . $e->getTraceAsString() . "\n", FILE_APPEND);
             
             return $this->responseService->json(false, 'Test error', [
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
+                'log_file' => 'Check test_webhook.log in project root'
+            ], 500);
+        }
+    }
+
+
+
+
+    #[Route('/test/webhook-simulate', name: 'billing_test_webhook_simulate#', methods: ['GET'])]
+    public function testWebhookSimulate(Request $request): JsonResponse
+    {
+        $logFile = '/tmp/webhook_simulate.log';
+        
+        try {
+            file_put_contents($logFile, "=== SIMULATE START " . date('Y-m-d H:i:s') . " ===\n");
+            
+            // Simulate the exact webhook data
+            $webhookData = [
+                'id' => 'cs_test_simulate',
+                'mode' => 'subscription',
+                'subscription' => 'sub_test_simulate',
+                'customer' => 'cus_test_simulate',
+                'metadata' => [
+                    'organization_id' => '47',
+                    'plan_id' => '3',
+                    'additional_seats' => '6'
+                ]
+            ];
+            
+            file_put_contents($logFile, "Webhook data: " . json_encode($webhookData, JSON_PRETTY_PRINT) . "\n", FILE_APPEND);
+            
+            // Get services to simulate webhook processing
+            $org = $this->organizationService->getOne(47);
+            $plan = $this->entityManager->getRepository(\App\Plugins\Billing\Entity\BillingPlanEntity::class)->find(3);
+            
+            if ($org && $plan) {
+                // Check if subscription already exists
+                $existingSub = $this->entityManager->getRepository(OrganizationSubscriptionEntity::class)
+                    ->findOneBy(['organization' => $org]);
+                    
+                if ($existingSub) {
+                    file_put_contents($logFile, "Found existing subscription ID: " . $existingSub->getId() . "\n", FILE_APPEND);
+                    $subscription = $existingSub;
+                } else {
+                    file_put_contents($logFile, "Creating new subscription\n", FILE_APPEND);
+                    $subscription = new OrganizationSubscriptionEntity();
+                    $subscription->setOrganization($org);
+                }
+                
+                $subscription->setPlan($plan);
+                $subscription->setStripeSubscriptionId($webhookData['subscription']);
+                $subscription->setStripeCustomerId($webhookData['customer']);
+                $subscription->setStatus('active');
+                $subscription->setAdditionalSeats((int)$webhookData['metadata']['additional_seats']);
+                
+                $this->entityManager->persist($subscription);
+                $this->entityManager->flush();
+                
+                file_put_contents($logFile, "Subscription saved with ID: " . $subscription->getId() . "\n", FILE_APPEND);
+                
+                return $this->responseService->json(true, 'Webhook simulation successful', [
+                    'subscription_id' => $subscription->getId(),
+                    'plan' => $plan->getName(),
+                    'seats' => $subscription->getAdditionalSeats(),
+                    'log_file' => 'Check webhook_simulate.log in project root'
+                ]);
+            } else {
+                file_put_contents($logFile, "ERROR: Could not find org or plan\n", FILE_APPEND);
+                return $this->responseService->json(false, 'Simulation failed - missing data', [
+                    'log_file' => 'Check webhook_simulate.log in project root'
+                ]);
+            }
+            
+        } catch (\Exception $e) {
+            file_put_contents($logFile, "ERROR: " . $e->getMessage() . "\n" . $e->getTraceAsString() . "\n", FILE_APPEND);
+            
+            return $this->responseService->json(false, 'Simulation error', [
+                'error' => $e->getMessage(),
+                'log_file' => 'Check webhook_simulate.log in project root'
             ], 500);
         }
     }
