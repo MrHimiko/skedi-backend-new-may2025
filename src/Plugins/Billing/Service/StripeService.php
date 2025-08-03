@@ -238,4 +238,67 @@ class StripeService
             }
         }
     }
+
+
+    /**
+     * Add seats to an existing subscription
+     * Stripe will automatically handle proration
+     */
+    public function updateSubscriptionSeats(
+        OrganizationSubscriptionEntity $subscription,
+        int $newTotalSeats
+    ): void {
+        if (!$subscription->getStripeSubscriptionId()) {
+            throw new \Exception('No active subscription found');
+        }
+        
+        if (!$this->additionalSeatsPriceId) {
+            throw new \Exception('Additional seats price ID not configured');
+        }
+        
+        try {
+            // Get the current subscription from Stripe
+            $stripeSubscription = $this->stripe->subscriptions->retrieve(
+                $subscription->getStripeSubscriptionId()
+            );
+            
+            // Find the seats subscription item
+            $seatsItemId = null;
+            $currentSeatsItem = null;
+            
+            foreach ($stripeSubscription->items->data as $item) {
+                if ($item->price->id === $this->additionalSeatsPriceId) {
+                    $seatsItemId = $item->id;
+                    $currentSeatsItem = $item;
+                    break;
+                }
+            }
+            
+            if ($seatsItemId) {
+                // Update existing seats item quantity
+                $this->stripe->subscriptionItems->update(
+                    $seatsItemId,
+                    ['quantity' => $newTotalSeats]
+                );
+            } else {
+                // Add seats item to subscription if it doesn't exist
+                $this->stripe->subscriptionItems->create([
+                    'subscription' => $subscription->getStripeSubscriptionId(),
+                    'price' => $this->additionalSeatsPriceId,
+                    'quantity' => $newTotalSeats
+                ]);
+            }
+            
+            // Update local database
+            $subscription->setAdditionalSeats($newTotalSeats);
+            $this->entityManager->flush();
+            
+            // Remove logger calls - just let exceptions bubble up
+            
+        } catch (\Stripe\Exception\ApiErrorException $e) {
+            throw new \Exception('Failed to update subscription seats: ' . $e->getMessage());
+        }
+    }
+
+
 }
