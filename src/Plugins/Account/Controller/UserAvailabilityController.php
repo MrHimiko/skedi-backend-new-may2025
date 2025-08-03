@@ -352,14 +352,8 @@ class UserAvailabilityController extends AbstractController
                 // Parse description back to reason and notes
                 $description = $item->getDescription();
                 if ($description) {
-                    $parts = explode(': ', $description, 2);
-                    if (count($parts) === 2) {
-                        $data['reason'] = $parts[0];
-                        $data['notes'] = $parts[1];
-                    } else {
-                        $data['reason'] = 'Unspecified';
-                        $data['notes'] = $description;
-                    }
+                    $data['reason'] = $description;
+                    $data['notes'] = $description;
                 } else {
                     $data['reason'] = 'Unspecified';
                     $data['notes'] = '';
