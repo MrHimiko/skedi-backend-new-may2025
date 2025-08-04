@@ -28,10 +28,10 @@ class WorkflowExecutionEntity
     #[ORM\Column(type: 'string', length: 50)]
     private string $status = 'pending';
 
-    #[ORM\Column(type: 'datetime')]
+    #[ORM\Column(name: 'started_at', type: 'datetime')]
     private \DateTime $startedAt;
 
-    #[ORM\Column(type: 'datetime', nullable: true)]
+    #[ORM\Column(name: 'completed_at', type: 'datetime', nullable: true)]
     private ?\DateTime $completedAt = null;
 
     #[ORM\Column(type: 'text', nullable: true)]
@@ -133,7 +133,7 @@ class WorkflowExecutionEntity
             'context' => $this->context,
             'status' => $this->status,
             'started_at' => $this->startedAt->format('Y-m-d H:i:s'),
-            'completed_at' => $this->completedAt ? $this->completedAt->format('Y-m-d H:i:s') : null,
+            'completed_at' => $this->completedAt?->format('Y-m-d H:i:s'),
             'error' => $this->error,
         ];
     }

@@ -7,6 +7,8 @@ use Doctrine\ORM\Mapping as ORM;
 use App\Plugins\Workflows\Repository\WorkflowRepository;
 use App\Plugins\Organizations\Entity\OrganizationEntity;
 use App\Plugins\Account\Entity\UserEntity;
+use Doctrine\Common\Collections\ArrayCollection;
+use Doctrine\Common\Collections\Collection;
 
 #[ORM\Entity(repositoryClass: WorkflowRepository::class)]
 #[ORM\Table(name: 'workflows')]
@@ -27,35 +29,36 @@ class WorkflowEntity
     #[ORM\Column(type: 'text', nullable: true)]
     private ?string $description = null;
 
-    #[ORM\Column(type: 'string', length: 100)]
+    #[ORM\Column(name: 'trigger_type', type: 'string', length: 100)]
     private string $triggerType;
 
-    #[ORM\Column(type: 'json')]
+    #[ORM\Column(name: 'trigger_config', type: 'json')]
     private array $triggerConfig = [];
 
     #[ORM\Column(type: 'string', length: 50)]
-    private string $status = 'inactive';
+    private string $status = 'draft';
 
-    #[ORM\Column(type: 'datetime')]
-    private \DateTime $created;
+    #[ORM\Column(name: 'created_at', type: 'datetime')]
+    private \DateTime $createdAt;
 
-    #[ORM\Column(type: 'datetime')]
-    private \DateTime $updated;
+    #[ORM\Column(name: 'updated_at', type: 'datetime')]
+    private \DateTime $updatedAt;
 
     #[ORM\ManyToOne(targetEntity: UserEntity::class)]
-    #[ORM\JoinColumn(nullable: true)]
+    #[ORM\JoinColumn(name: 'created_by_id', nullable: true)]
     private ?UserEntity $createdBy = null;
 
     #[ORM\Column(type: 'boolean')]
     private bool $deleted = false;
 
-    #[ORM\OneToMany(targetEntity: WorkflowNodeEntity::class, mappedBy: 'workflow', cascade: ['remove'])]
-    private $nodes;
+    #[ORM\OneToMany(mappedBy: 'workflow', targetEntity: WorkflowNodeEntity::class)]
+    private Collection $nodes;
 
     public function __construct()
     {
-        $this->created = new \DateTime();
-        $this->updated = new \DateTime();
+        $this->createdAt = new \DateTime();
+        $this->updatedAt = new \DateTime();
+        $this->nodes = new ArrayCollection();
     }
 
     public function getId(): ?int
@@ -129,25 +132,25 @@ class WorkflowEntity
         return $this;
     }
 
-    public function getCreated(): \DateTime
+    public function getCreatedAt(): \DateTime
     {
-        return $this->created;
+        return $this->createdAt;
     }
 
-    public function setCreated(\DateTime $created): self
+    public function setCreatedAt(\DateTime $createdAt): self
     {
-        $this->created = $created;
+        $this->createdAt = $createdAt;
         return $this;
     }
 
-    public function getUpdated(): \DateTime
+    public function getUpdatedAt(): \DateTime
     {
-        return $this->updated;
+        return $this->updatedAt;
     }
 
-    public function setUpdated(\DateTime $updated): self
+    public function setUpdatedAt(\DateTime $updatedAt): self
     {
-        $this->updated = $updated;
+        $this->updatedAt = $updatedAt;
         return $this;
     }
 
@@ -173,7 +176,7 @@ class WorkflowEntity
         return $this;
     }
 
-    public function getNodes()
+    public function getNodes(): Collection
     {
         return $this->nodes;
     }
@@ -188,8 +191,8 @@ class WorkflowEntity
             'trigger_type' => $this->triggerType,
             'trigger_config' => $this->triggerConfig,
             'status' => $this->status,
-            'created' => $this->created->format('Y-m-d H:i:s'),
-            'updated' => $this->updated->format('Y-m-d H:i:s'),
+            'created_at' => $this->createdAt->format('Y-m-d H:i:s'),
+            'updated_at' => $this->updatedAt->format('Y-m-d H:i:s'),
             'created_by' => $this->createdBy ? $this->createdBy->getId() : null,
         ];
     }

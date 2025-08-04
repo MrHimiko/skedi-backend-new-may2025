@@ -33,12 +33,16 @@ class WorkflowConnectionEntity
     #[ORM\Column(type: 'integer')]
     private int $priority = 0;
 
-    #[ORM\Column(type: 'datetime')]
-    private \DateTime $created;
+    #[ORM\Column(name: 'created_at', type: 'datetime')]
+    private \DateTime $createdAt;
+
+    #[ORM\Column(name: 'updated_at', type: 'datetime')]
+    private \DateTime $updatedAt;
 
     public function __construct()
     {
-        $this->created = new \DateTime();
+        $this->createdAt = new \DateTime();
+        $this->updatedAt = new \DateTime();
     }
 
     public function getId(): ?int
@@ -101,14 +105,25 @@ class WorkflowConnectionEntity
         return $this;
     }
 
-    public function getCreated(): \DateTime
+    public function getCreatedAt(): \DateTime
     {
-        return $this->created;
+        return $this->createdAt;
     }
 
-    public function setCreated(\DateTime $created): self
+    public function setCreatedAt(\DateTime $createdAt): self
     {
-        $this->created = $created;
+        $this->createdAt = $createdAt;
+        return $this;
+    }
+
+    public function getUpdatedAt(): \DateTime
+    {
+        return $this->updatedAt;
+    }
+
+    public function setUpdatedAt(\DateTime $updatedAt): self
+    {
+        $this->updatedAt = $updatedAt;
         return $this;
     }
 
@@ -117,11 +132,12 @@ class WorkflowConnectionEntity
         return [
             'id' => $this->id,
             'workflow_id' => $this->workflow->getId(),
-            'from_node_id' => $this->fromNode ? $this->fromNode->getId() : null,
+            'from_node_id' => $this->fromNode?->getId(),
             'to_node_id' => $this->toNode->getId(),
             'condition_type' => $this->conditionType,
             'priority' => $this->priority,
-            'created' => $this->created->format('Y-m-d H:i:s'),
+            'created_at' => $this->createdAt->format('Y-m-d H:i:s'),
+            'updated_at' => $this->updatedAt->format('Y-m-d H:i:s'),
         ];
     }
 }

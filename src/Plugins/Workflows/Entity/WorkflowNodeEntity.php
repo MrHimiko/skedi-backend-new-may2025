@@ -25,6 +25,9 @@ class WorkflowNodeEntity
     #[ORM\Column(type: 'string', length: 100, nullable: true)]
     private ?string $actionType = null; // 'email.send', 'webhook.send'
 
+    #[ORM\Column(type: 'string', length: 255, nullable: true)]
+    private ?string $name = null;
+
     #[ORM\Column(type: 'json')]
     private array $config = [];
 
@@ -34,19 +37,19 @@ class WorkflowNodeEntity
     #[ORM\Column(type: 'integer')]
     private int $positionY = 0;
 
-    #[ORM\Column(type: 'datetime')]
-    private \DateTime $created;
+    #[ORM\Column(name: 'created_at', type: 'datetime')]
+    private \DateTime $createdAt;
 
-    #[ORM\Column(type: 'datetime')]
-    private \DateTime $updated;
+    #[ORM\Column(name: 'updated_at', type: 'datetime')]
+    private \DateTime $updatedAt;
 
     #[ORM\Column(type: 'boolean')]
     private bool $deleted = false;
 
     public function __construct()
     {
-        $this->created = new \DateTime();
-        $this->updated = new \DateTime();
+        $this->createdAt = new \DateTime();
+        $this->updatedAt = new \DateTime();
     }
 
     public function getId(): ?int
@@ -87,6 +90,17 @@ class WorkflowNodeEntity
         return $this;
     }
 
+    public function getName(): ?string
+    {
+        return $this->name;
+    }
+
+    public function setName(?string $name): self
+    {
+        $this->name = $name;
+        return $this;
+    }
+
     public function getConfig(): array
     {
         return $this->config;
@@ -120,25 +134,25 @@ class WorkflowNodeEntity
         return $this;
     }
 
-    public function getCreated(): \DateTime
+    public function getCreatedAt(): \DateTime
     {
-        return $this->created;
+        return $this->createdAt;
     }
 
-    public function setCreated(\DateTime $created): self
+    public function setCreatedAt(\DateTime $createdAt): self
     {
-        $this->created = $created;
+        $this->createdAt = $createdAt;
         return $this;
     }
 
-    public function getUpdated(): \DateTime
+    public function getUpdatedAt(): \DateTime
     {
-        return $this->updated;
+        return $this->updatedAt;
     }
 
-    public function setUpdated(\DateTime $updated): self
+    public function setUpdatedAt(\DateTime $updatedAt): self
     {
-        $this->updated = $updated;
+        $this->updatedAt = $updatedAt;
         return $this;
     }
 
@@ -160,11 +174,12 @@ class WorkflowNodeEntity
             'workflow_id' => $this->workflow->getId(),
             'node_type' => $this->nodeType,
             'action_type' => $this->actionType,
+            'name' => $this->name,
             'config' => $this->config,
             'position_x' => $this->positionX,
             'position_y' => $this->positionY,
-            'created' => $this->created->format('Y-m-d H:i:s'),
-            'updated' => $this->updated->format('Y-m-d H:i:s'),
+            'created_at' => $this->createdAt->format('Y-m-d H:i:s'),
+            'updated_at' => $this->updatedAt->format('Y-m-d H:i:s'),
         ];
     }
 }

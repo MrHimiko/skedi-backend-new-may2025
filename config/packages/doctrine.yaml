@@ -75,6 +75,13 @@ doctrine:
                 prefix: 'App\Plugins\Contacts\Entity'
                 alias: Contacts
 
+            Workflows:
+                is_bundle: false
+                type: attribute
+                dir: '%kernel.project_dir%/src/Plugins/Workflows/Entity'
+                prefix: 'App\Plugins\Workflows\Entity'
+                alias: Workflows
+
             Billing:
                 is_bundle: false
                 type: attribute
