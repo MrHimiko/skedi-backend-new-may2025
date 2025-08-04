@@ -157,39 +157,39 @@ class WorkflowService
 
     // Node management
     public function createNode(WorkflowEntity $workflow, array $data): WorkflowNodeEntity
-    {
-        try {
-            $node = new WorkflowNodeEntity();
-            $node->setWorkflow($workflow);
-
-            $this->crudManager->create(
-                $node,
-                $data,
-                [
-                    'node_type' => [
-                        new Assert\NotBlank(),
-                        new Assert\Choice(['choices' => ['action', 'condition']]),
-                    ],
-                    'action_type' => new Assert\Optional([
-                        new Assert\Type('string'),
-                    ]),
-                    'config' => new Assert\Optional([
-                        new Assert\Type('array'),
-                    ]),
-                    'position_x' => new Assert\Optional([
-                        new Assert\Type('integer'),
-                    ]),
-                    'position_y' => new Assert\Optional([
-                        new Assert\Type('integer'),
-                    ]),
-                ]
-            );
-
-            return $node;
-        } catch (CrudException $e) {
-            throw new WorkflowsException($e->getMessage());
+{
+    try {
+        $node = new WorkflowNodeEntity();
+        $node->setWorkflow($workflow);
+        $node->setNodeType($data['node_type']);
+        
+        if (isset($data['action_type'])) {
+            $node->setActionType($data['action_type']);
         }
+        
+        if (isset($data['name'])) {
+            $node->setName($data['name']);
+        }
+        
+        if (isset($data['config']) && is_array($data['config'])) {
+            $node->setConfig($data['config']);
+        } else {
+            $node->setConfig([]);
+        }
+        
+        // Set positions (we'll remove these later)
+        $node->setPositionX($data['position_x'] ?? 0);
+        $node->setPositionY($data['position_y'] ?? 0);
+        
+        // Persist and flush
+        $this->entityManager->persist($node);
+        $this->entityManager->flush();
+
+        return $node;
+    } catch (\Exception $e) {
+        throw new WorkflowsException($e->getMessage());
     }
+}
 
     public function updateNode(WorkflowNodeEntity $node, array $data): void
     {
@@ -271,4 +271,64 @@ class WorkflowService
             'event.deleted',
         ];
     }
+
+
+
+    /**
+     * Get all nodes for a workflow
+     */
+    public function getNodesByWorkflow(WorkflowEntity $workflow): array
+    {
+        try {
+            return $this->crudManager->findMany(
+                WorkflowNodeEntity::class,
+                [],
+                1,
+                1000,
+                [
+                    'workflow' => $workflow,
+                    'deleted' => false
+                ]
+            );
+        } catch (CrudException $e) {
+            throw new WorkflowsException($e->getMessage());
+        }
+    }
+
+    /**
+     * Get all connections for a workflow
+     */
+    public function getConnectionsByWorkflow(WorkflowEntity $workflow): array
+    {
+        try {
+            return $this->crudManager->findMany(
+                WorkflowConnectionEntity::class,
+                [],
+                1,
+                1000,
+                [
+                    'workflow' => $workflow
+                ]
+            );
+        } catch (CrudException $e) {
+            throw new WorkflowsException($e->getMessage());
+        }
+    }
+
+    /**
+     * Get a single node by ID
+     */
+    public function getNode(int $id): ?WorkflowNodeEntity
+    {
+        return $this->crudManager->findOne(WorkflowNodeEntity::class, $id);
+    }
+
+    /**
+     * Get a single connection by ID
+     */
+    public function getConnection(int $id): ?WorkflowConnectionEntity
+    {
+        return $this->crudManager->findOne(WorkflowConnectionEntity::class, $id);
+    }
+
 }

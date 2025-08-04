@@ -21,6 +21,7 @@ class WorkflowNodeEntity
 
     #[ORM\Column(type: 'string', length: 50)]
     private string $nodeType; // 'action', 'condition'
+    
 
     #[ORM\Column(type: 'string', length: 100, nullable: true)]
     private ?string $actionType = null; // 'email.send', 'webhook.send'

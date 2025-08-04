@@ -68,6 +68,134 @@ class WorkflowController extends AbstractController
         }
     }
 
+    #[Route('/available-triggers', name: 'workflow_triggers#', methods: ['GET'])]
+    public function getAvailableTriggers(): JsonResponse
+    {
+        try {
+            // This will be extended by the registry system
+            $triggers = [
+                [
+                    'id' => 'booking.created',
+                    'name' => 'Booking Created',
+                    'description' => 'Triggered when a new booking is created',
+                    'category' => 'booking',
+                    'variables' => [
+                        'booking.id',
+                        'booking.start_time',
+                        'booking.end_time',
+                        'booking.customer_name',
+                        'booking.customer_email',
+                        'event.name',
+                        'event.duration',
+                    ]
+                ],
+                [
+                    'id' => 'booking.cancelled',
+                    'name' => 'Booking Cancelled',
+                    'description' => 'Triggered when a booking is cancelled',
+                    'category' => 'booking',
+                    'variables' => [
+                        'booking.id',
+                        'booking.customer_name',
+                        'booking.customer_email',
+                        'booking.cancellation_reason',
+                    ]
+                ],
+                [
+                    'id' => 'booking.reminder',
+                    'name' => 'Booking Reminder',
+                    'description' => 'Triggered X minutes before booking starts',
+                    'category' => 'booking',
+                    'config_schema' => [
+                        'minutes_before' => [
+                            'type' => 'integer',
+                            'label' => 'Minutes before event',
+                            'default' => 60,
+                            'min' => 5,
+                            'max' => 10080
+                        ]
+                    ]
+                ]
+            ];
+
+            return $this->responseService->json(true, 'Available triggers', $triggers);
+        } catch (\Exception $e) {
+            return $this->responseService->json(false, 'An error occurred', null, 500);
+        }
+    }
+
+    #[Route('/available-actions', name: 'workflow_actions#', methods: ['GET'])]
+    public function getAvailableActions(): JsonResponse
+    {
+        try {
+            // This will be extended by the registry system
+            $actions = [
+                [
+                    'id' => 'email.send',
+                    'name' => 'Send Email',
+                    'description' => 'Send an email to specified recipients',
+                    'category' => 'communication',
+                    'icon' => 'PhEnvelope',
+                    'config_schema' => [
+                        'to' => [
+                            'type' => 'string',
+                            'label' => 'To Email',
+                            'placeholder' => '{{booking.customer_email}}',
+                            'required' => true
+                        ],
+                        'subject' => [
+                            'type' => 'string',
+                            'label' => 'Subject',
+                            'required' => true
+                        ],
+                        'body' => [
+                            'type' => 'textarea',
+                            'label' => 'Email Body',
+                            'required' => true,
+                            'rows' => 10
+                        ]
+                    ]
+                ],
+                [
+                    'id' => 'webhook.send',
+                    'name' => 'Send Webhook',
+                    'description' => 'Send data to an external URL',
+                    'category' => 'integration',
+                    'icon' => 'PhWebhooksLogo',
+                    'config_schema' => [
+                        'url' => [
+                            'type' => 'string',
+                            'label' => 'Webhook URL',
+                            'placeholder' => 'https://example.com/webhook',
+                            'required' => true
+                        ],
+                        'method' => [
+                            'type' => 'select',
+                            'label' => 'HTTP Method',
+                            'options' => ['POST', 'PUT', 'PATCH'],
+                            'default' => 'POST',
+                            'required' => true
+                        ],
+                        'headers' => [
+                            'type' => 'json',
+                            'label' => 'Headers (JSON)',
+                            'placeholder' => '{"Authorization": "Bearer token"}'
+                        ],
+                        'body' => [
+                            'type' => 'json',
+                            'label' => 'Body (JSON)',
+                            'placeholder' => '{"booking_id": "{{booking.id}}"}'
+                        ]
+                    ]
+                ]
+            ];
+
+            return $this->responseService->json(true, 'Available actions', $actions);
+        } catch (\Exception $e) {
+            return $this->responseService->json(false, 'An error occurred', null, 500);
+        }
+    }
+
     #[Route('/{id}', name: 'workflow_get#', methods: ['GET'])]
     public function get(int $id, Request $request): JsonResponse
     {
@@ -82,19 +210,8 @@ class WorkflowController extends AbstractController
             // TODO: Check user permissions
 
             // Get nodes and connections
-            $nodes = $this->workflowService->getMany(
-                [],
-                1,
-                1000,
-                ['workflow' => $workflow, 'deleted' => false]
-            );
-
-            $connections = $this->workflowService->getMany(
-                [],
-                1,
-                1000,
-                ['workflow' => $workflow]
-            );
+            $nodes = $this->workflowService->getNodesByWorkflow($workflow);
+            $connections = $this->workflowService->getConnectionsByWorkflow($workflow);
 
             $data = $workflow->toArray();
             $data['nodes'] = array_map(fn($n) => $n->toArray(), $nodes);
@@ -242,7 +359,7 @@ class WorkflowController extends AbstractController
         try {
             $user = $request->attributes->get('user');
             $data = $request->attributes->get('data');
-            $node = $this->workflowService->getOne($nodeId); // This needs a getNode method
+            $node = $this->workflowService->getNode($nodeId); // Fixed: using getNode instead of getOne
             
             if (!$node) {
                 return $this->responseService->json(false, 'Node not found', null, 404);
@@ -265,7 +382,7 @@ class WorkflowController extends AbstractController
     {
         try {
             $user = $request->attributes->get('user');
-            $node = $this->workflowService->getOne($nodeId); // This needs a getNode method
+            $node = $this->workflowService->getNode($nodeId); // Fixed: using getNode instead of getOne
             
             if (!$node) {
                 return $this->responseService->json(false, 'Node not found', null, 404);
@@ -312,7 +429,7 @@ class WorkflowController extends AbstractController
     {
         try {
             $user = $request->attributes->get('user');
-            $connection = $this->workflowService->getOne($connectionId); // This needs a getConnection method
+            $connection = $this->workflowService->getConnection($connectionId); // Fixed: using getConnection instead of getOne
             
             if (!$connection) {
                 return $this->responseService->json(false, 'Connection not found', null, 404);
@@ -347,134 +464,6 @@ class WorkflowController extends AbstractController
             return $this->responseService->json(true, 'Workflow test executed successfully');
         } catch (WorkflowsException $e) {
             return $this->responseService->json(false, $e->getMessage(), null, 400);
-        } catch (\Exception $e) {
-            return $this->responseService->json(false, 'An error occurred', null, 500);
-        }
-    }
-
-    #[Route('/available-triggers', name: 'workflow_triggers', methods: ['GET'])]
-    public function getAvailableTriggers(): JsonResponse
-    {
-        try {
-            // This will be extended by the registry system
-            $triggers = [
-                [
-                    'id' => 'booking.created',
-                    'name' => 'Booking Created',
-                    'description' => 'Triggered when a new booking is created',
-                    'category' => 'booking',
-                    'variables' => [
-                        'booking.id',
-                        'booking.start_time',
-                        'booking.end_time',
-                        'booking.customer_name',
-                        'booking.customer_email',
-                        'event.name',
-                        'event.duration',
-                    ]
-                ],
-                [
-                    'id' => 'booking.cancelled',
-                    'name' => 'Booking Cancelled',
-                    'description' => 'Triggered when a booking is cancelled',
-                    'category' => 'booking',
-                    'variables' => [
-                        'booking.id',
-                        'booking.customer_name',
-                        'booking.customer_email',
-                        'booking.cancellation_reason',
-                    ]
-                ],
-                [
-                    'id' => 'booking.reminder',
-                    'name' => 'Booking Reminder',
-                    'description' => 'Triggered X minutes before booking starts',
-                    'category' => 'booking',
-                    'config_schema' => [
-                        'minutes_before' => [
-                            'type' => 'integer',
-                            'label' => 'Minutes before event',
-                            'default' => 60,
-                            'min' => 5,
-                            'max' => 10080
-                        ]
-                    ]
-                ]
-            ];
-
-            return $this->responseService->json(true, 'Available triggers', $triggers);
-        } catch (\Exception $e) {
-            return $this->responseService->json(false, 'An error occurred', null, 500);
-        }
-    }
-
-    #[Route('/available-actions', name: 'workflow_actions', methods: ['GET'])]
-    public function getAvailableActions(): JsonResponse
-    {
-        try {
-            // This will be extended by the registry system
-            $actions = [
-                [
-                    'id' => 'email.send',
-                    'name' => 'Send Email',
-                    'description' => 'Send an email to specified recipients',
-                    'category' => 'communication',
-                    'icon' => 'PhEnvelope',
-                    'config_schema' => [
-                        'to' => [
-                            'type' => 'string',
-                            'label' => 'To Email',
-                            'placeholder' => '{{booking.customer_email}}',
-                            'required' => true
-                        ],
-                        'subject' => [
-                            'type' => 'string',
-                            'label' => 'Subject',
-                            'required' => true
-                        ],
-                        'body' => [
-                            'type' => 'textarea',
-                            'label' => 'Email Body',
-                            'required' => true,
-                            'rows' => 10
-                        ]
-                    ]
-                ],
-                [
-                    'id' => 'webhook.send',
-                    'name' => 'Send Webhook',
-                    'description' => 'Send data to an external URL',
-                    'category' => 'integration',
-                    'icon' => 'PhWebhooksLogo',
-                    'config_schema' => [
-                        'url' => [
-                            'type' => 'string',
-                            'label' => 'Webhook URL',
-                            'placeholder' => 'https://example.com/webhook',
-                            'required' => true
-                        ],
-                        'method' => [
-                            'type' => 'select',
-                            'label' => 'HTTP Method',
-                            'options' => ['POST', 'PUT', 'PATCH'],
-                            'default' => 'POST',
-                            'required' => true
-                        ],
-                        'headers' => [
-                            'type' => 'json',
-                            'label' => 'Headers (JSON)',
-                            'placeholder' => '{"Authorization": "Bearer token"}'
-                        ],
-                        'body' => [
-                            'type' => 'json',
-                            'label' => 'Body (JSON)',
-                            'placeholder' => '{"booking_id": "{{booking.id}}"}'
-                        ]
-                    ]
-                ]
-            ];
-
-            return $this->responseService->json(true, 'Available actions', $actions);
         } catch (\Exception $e) {
             return $this->responseService->json(false, 'An error occurred', null, 500);
         }
