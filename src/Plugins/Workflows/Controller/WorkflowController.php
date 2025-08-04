@@ -329,29 +329,6 @@ class WorkflowController extends AbstractController
         }
     }
 
-    #[Route('/{id}/nodes', name: 'workflow_node_create#', methods: ['POST'])]
-    public function createNode(int $id, Request $request): JsonResponse
-    {
-        try {
-            $user = $request->attributes->get('user');
-            $data = $request->attributes->get('data');
-            $workflow = $this->workflowService->getOne($id);
-            
-            if (!$workflow || $workflow->getDeleted()) {
-                return $this->responseService->json(false, 'Workflow not found', null, 404);
-            }
-
-            // TODO: Check user permissions
-
-            $node = $this->workflowService->createNode($workflow, $data);
-
-            return $this->responseService->json(true, 'Node created successfully', $node->toArray(), 201);
-        } catch (WorkflowsException $e) {
-            return $this->responseService->json(false, $e->getMessage(), null, 400);
-        } catch (\Exception $e) {
-            return $this->responseService->json(false, 'An error occurred', null, 500);
-        }
-    }
 
     #[Route('/nodes/{nodeId}', name: 'workflow_node_update#', methods: ['PUT', 'PATCH'])]
     public function updateNode(int $nodeId, Request $request): JsonResponse
