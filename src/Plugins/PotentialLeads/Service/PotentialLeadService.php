@@ -55,21 +55,66 @@ class PotentialLeadService
 
             $organization = $event->getOrganization();
             
-            // Check if email already exists in contacts
+            // Check if email already exists in contacts for this organization
             if ($this->isExistingContact($email, $organization)) {
                 return null; // Already a contact, don't add as lead
             }
 
-            // Check if already exists as potential lead
-            if ($this->isExistingPotentialLead($email, $organization)) {
-                return null; // Already a potential lead
+            // Find existing potential lead by email or create new one
+            $existingLeads = $this->crudManager->findMany(
+                PotentialLeadEntity::class,
+                [],
+                1,
+                1,
+                ['email' => $email]
+            );
+
+            if (!empty($existingLeads)) {
+                // Use existing potential lead
+                $potentialLead = $existingLeads[0];
+                
+                // Update name and timezone if provided and different
+                $needsUpdate = false;
+                if (!empty($data['name']) && $potentialLead->getName() !== $data['name']) {
+                    $potentialLead->setName($data['name']);
+                    $needsUpdate = true;
+                }
+                if (!empty($data['timezone']) && $potentialLead->getTimezone() !== $data['timezone']) {
+                    $potentialLead->setTimezone($data['timezone']);
+                    $needsUpdate = true;
+                }
+                
+                if ($needsUpdate) {
+                    $this->entityManager->persist($potentialLead);
+                    $this->entityManager->flush();
+                }
+            } else {
+                // Create new potential lead
+                $potentialLead = $this->createPotentialLead($data);
             }
 
-            // Create potential lead
-            $potentialLead = $this->createPotentialLead($data);
+            // Check if organization relationship already exists
+            $existingOrgLeads = $this->crudManager->findMany(
+                OrganizationPotentialLeadEntity::class,
+                [],
+                1,
+                1,
+                [
+                    'potentialLead' => $potentialLead,
+                    'organization' => $organization,
+                    'deleted' => false
+                ]
+            );
 
-            // Create organization relationship
-            $this->createOrganizationPotentialLead($potentialLead, $organization);
+            if (empty($existingOrgLeads)) {
+                // Create organization relationship using the existing method
+                $orgLead = new OrganizationPotentialLeadEntity();
+                $orgLead->setPotentialLead($potentialLead);
+                $orgLead->setOrganization($organization);
+
+                $this->entityManager->persist($orgLead);
+                $this->entityManager->flush();
+            }
 
             // Create host relationships for all assignees
             $this->createHostPotentialLeads($potentialLead, $event);
@@ -79,6 +124,78 @@ class PotentialLeadService
         } catch (CrudException $e) {
             throw new PotentialLeadsException('Failed to add potential lead: ' . $e->getMessage());
         }
+    }
+    /**
+     * Create organization potential lead relationship if it doesn't exist
+     */
+    private function createOrganizationPotentialLeadIfNotExists(
+        PotentialLeadEntity $potentialLead, 
+        OrganizationEntity $organization
+    ): void {
+        // Check if relationship already exists
+        $existing = $this->crudManager->findMany(
+            OrganizationPotentialLeadEntity::class,
+            [],
+            1,
+            1,
+            [
+                'potentialLead' => $potentialLead,
+                'organization' => $organization,
+                'deleted' => false
+            ]
+        );
+
+        if (empty($existing)) {
+            // Create new relationship
+            $orgLead = new OrganizationPotentialLeadEntity();
+            $orgLead->setPotentialLead($potentialLead);
+            $orgLead->setOrganization($organization);
+
+            $this->entityManager->persist($orgLead);
+            $this->entityManager->flush();
+        }
+    }
+
+
+    /**
+     * Find existing potential lead or create new one
+     */
+    private function findOrCreatePotentialLead(array $data): PotentialLeadEntity
+    {
+        // First check if potential lead with this email already exists
+        $existingLeads = $this->crudManager->findMany(
+            PotentialLeadEntity::class,
+            [],
+            1,
+            1,
+            ['email' => $data['email']]
+        );
+
+        if (!empty($existingLeads)) {
+            // Use existing potential lead
+            $potentialLead = $existingLeads[0];
+            
+            // Update name and timezone if provided and different
+            $needsUpdate = false;
+            if (!empty($data['name']) && $potentialLead->getName() !== $data['name']) {
+                $potentialLead->setName($data['name']);
+                $needsUpdate = true;
+            }
+            if (!empty($data['timezone']) && $potentialLead->getTimezone() !== $data['timezone']) {
+                $potentialLead->setTimezone($data['timezone']);
+                $needsUpdate = true;
+            }
+            
+            if ($needsUpdate) {
+                $this->entityManager->persist($potentialLead);
+                $this->entityManager->flush();
+            }
+            
+            return $potentialLead;
+        }
+
+        // Create new potential lead
+        return $this->createPotentialLead($data);
     }
 
     /**
@@ -431,7 +548,7 @@ class PotentialLeadService
     /**
      * Create potential lead entity
      */
-    private function createPotentialLead(array $data): PotentialLeadEntity
+     private function createPotentialLead(array $data): PotentialLeadEntity
     {
         $potentialLead = new PotentialLeadEntity();
         $potentialLead->setEmail($data['email']);
@@ -446,23 +563,6 @@ class PotentialLeadService
         $this->entityManager->flush();
 
         return $potentialLead;
-    }
-
-    /**
-     * Create organization potential lead relationship
-     */
-    private function createOrganizationPotentialLead(
-        PotentialLeadEntity $potentialLead, 
-        OrganizationEntity $organization
-    ): OrganizationPotentialLeadEntity {
-        $orgLead = new OrganizationPotentialLeadEntity();
-        $orgLead->setPotentialLead($potentialLead);
-        $orgLead->setOrganization($organization);
-
-        $this->entityManager->persist($orgLead);
-        $this->entityManager->flush();
-
-        return $orgLead;
     }
 
     /**

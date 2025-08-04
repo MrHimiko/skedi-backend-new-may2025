@@ -185,7 +185,7 @@ class FormEntity
         foreach ($fieldsJson as $field) {
             $fieldName = $field['name'] ?? '';
             
-            // Skip old system field names
+            // Skip old system field names only if they're marked as system fields
             if (in_array($fieldName, $oldSystemNames) && !empty($field['system_field'])) {
                 continue;
             }
@@ -195,23 +195,29 @@ class FormEntity
                 $foundSystemFields[$fieldName] = true;
             }
             
+            // Add all fields to cleaned fields (including custom fields)
             $cleanedFields[] = $field;
         }
         
-        // Add missing system fields
+        // Add missing system fields at the beginning
         $defaultFields = $this->getDefaultFields();
+        $systemFieldsToAdd = [];
+        
         foreach ($defaultFields as $defaultField) {
             if (!isset($foundSystemFields[$defaultField['name']])) {
                 // Only add required system fields (name and email)
                 if (in_array($defaultField['name'], [self::SYSTEM_FIELD_NAME, self::SYSTEM_FIELD_EMAIL])) {
-                    array_unshift($cleanedFields, $defaultField);
+                    $systemFieldsToAdd[] = $defaultField;
                 }
             }
         }
         
-        $this->fieldsJson = $cleanedFields;
+        // Prepend missing system fields to the beginning
+        $this->fieldsJson = array_merge($systemFieldsToAdd, $cleanedFields);
+        
         return $this;
     }
+
 
     public function getFieldsJson(): array
     {
@@ -319,9 +325,10 @@ class FormEntity
                 'email' => $this->getCreatedBy()->getEmail()
             ],
             'fields' => $this->getFieldsJson(),
-            'settings' => $this->getSettingsJson(),
+            // Return settings as-is if it's not null, otherwise return empty object
+            'settings' => $this->getSettingsJson() ?: (object)[],
             'is_active' => $this->isActive(),
-            'allow_multiple_submissions' => $this->isAllowMultipleSubmissions(),
+            'allow_multiple_submissions' => $this->isAllowMultipleSubmissions(), 
             'requires_authentication' => $this->isRequiresAuthentication(),
             'created' => $this->getCreated()->format('Y-m-d H:i:s'),
             'updated' => $this->getUpdated()->format('Y-m-d H:i:s')

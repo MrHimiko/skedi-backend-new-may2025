@@ -222,7 +222,7 @@ class FormService
                 $data['slug'] = $this->slugService->generateSlug($data['name']);
             }
             
-            // Update organization if provided
+            // Handle organization_id separately
             if (isset($data['organization_id'])) {
                 $organization = $this->crudManager->findOne(
                     'App\Plugins\Organizations\Entity\OrganizationEntity',
@@ -232,6 +232,8 @@ class FormService
                     throw new FormsException('Organization not found.');
                 }
                 $form->setOrganization($organization);
+                // Remove from data to avoid validation issues
+                unset($data['organization_id']);
             }
             
             $constraints = [
@@ -261,29 +263,8 @@ class FormService
                 ]
             ];
 
-            $transform = [
-                'fields' => function($value) use (&$form) {
-                    $fieldsArray = is_array($value) ? $value : [];
-                    $form->setFieldsJson($fieldsArray);
-                    return $fieldsArray;
-                },
-                'settings' => function($value) use (&$form) {
-                    $settingsArray = is_array($value) ? $value : [];
-                    $form->setSettingsJson($settingsArray);
-                    return $settingsArray;
-                },
-            ];
-
-            $this->crudManager->update($form, $data, $constraints, $transform);
-
-            if (isset($data['fields'])) {
-                $form->setFieldsJson(is_array($data['fields']) ? $data['fields'] : []);
-            }
-            if (isset($data['settings'])) {
-                $form->setSettingsJson(is_array($data['settings']) ? $data['settings'] : []);
-            }
-            $this->entityManager->flush();
-
+            // Don't use transform callbacks - let CrudManager handle the setters directly
+            $this->crudManager->update($form, $data, $constraints);
             
         } catch (CrudException $e) {
             throw new FormsException($e->getMessage());

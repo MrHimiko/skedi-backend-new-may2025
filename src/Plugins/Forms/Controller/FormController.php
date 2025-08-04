@@ -192,30 +192,39 @@ class FormController extends AbstractController
 
     #[Route('/forms/{id}', name: 'forms_update_global#', methods: ['PUT'], requirements: ['id' => '\d+'])]
     public function updateFormGlobal(int $id, Request $request): JsonResponse
-    {
-        $user = $request->attributes->get('user');
-        $data = $request->attributes->get('data');
-
-        try {
-            if (!$user) {
-                return $this->responseService->json(false, 'Authentication required.');
-            }
-
-            $form = $this->formService->getOne($id);
-
-            if (!$form) {
-                return $this->responseService->json(false, 'Form was not found.');
-            }
-
-            $this->formService->update($form, $data);
-
-            return $this->responseService->json(true, 'Form updated successfully.', $form->toArray());
-        } catch (FormsException $e) {
-            return $this->responseService->json(false, $e->getMessage(), null, 400);
-        } catch (\Exception $e) {
-            return $this->responseService->json(false, $e, null, 500);
+{
+    $user = $request->attributes->get('user');
+    $data = $request->attributes->get('data');
+    
+    echo "=== FormController::updateFormGlobal ===\n";
+    echo "1. Input data fields count: " . count($data['fields'] ?? []) . "\n";
+    echo "2. Input fields:\n";
+    echo json_encode($data['fields'] ?? [], JSON_PRETTY_PRINT) . "\n\n";
+    
+    try {
+        if (!$user) {
+            return $this->responseService->json(false, 'Authentication required.');
         }
+
+        $form = $this->formService->getOne($id);
+
+        if (!$form) {
+            return $this->responseService->json(false, 'Form was not found.');
+        }
+        
+        echo "Form found, calling formService->update\n";
+        
+        $this->formService->update($form, $data);
+        
+        echo "Update completed, returning response\n";
+
+        return $this->responseService->json(true, 'Form updated successfully.', $form->toArray());
+    } catch (FormsException $e) {
+        return $this->responseService->json(false, $e->getMessage(), null, 400);
+    } catch (\Exception $e) {
+        return $this->responseService->json(false, $e, null, 500);
     }
+}
 
     // Keep organization-based endpoint for backward compatibility
     #[Route('/organizations/{organization_id}/forms/{id}', name: 'forms_update#', methods: ['PUT'], requirements: ['organization_id' => '\d+', 'id' => '\d+'])]

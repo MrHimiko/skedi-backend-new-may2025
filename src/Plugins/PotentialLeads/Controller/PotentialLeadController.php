@@ -13,6 +13,7 @@ use App\Plugins\PotentialLeads\Exception\PotentialLeadsException;
 use App\Plugins\Events\Repository\EventRepository;
 use App\Plugins\Organizations\Service\OrganizationService;
 use App\Plugins\Organizations\Service\UserOrganizationService;
+use App\Plugins\Events\Service\EventService;
 
 class PotentialLeadController extends AbstractController
 {
@@ -22,6 +23,7 @@ class PotentialLeadController extends AbstractController
     private EventRepository $eventRepository;
     private OrganizationService $organizationService;
     private UserOrganizationService $userOrganizationService;
+    private EventService $eventService;
 
     public function __construct(
         ResponseService $responseService,
@@ -29,7 +31,8 @@ class PotentialLeadController extends AbstractController
         EntityManagerInterface $entityManager,
         EventRepository $eventRepository,
         OrganizationService $organizationService,
-        UserOrganizationService $userOrganizationService
+        UserOrganizationService $userOrganizationService,
+        EventService $eventService
     ) {
         $this->responseService = $responseService;
         $this->potentialLeadService = $potentialLeadService;
@@ -37,6 +40,7 @@ class PotentialLeadController extends AbstractController
         $this->eventRepository = $eventRepository;
         $this->organizationService = $organizationService;
         $this->userOrganizationService = $userOrganizationService;
+        $this->eventService = $eventService;
     }
 
     #[Route('/api/public/events/{eventSlug}/potential-lead', name: 'add_potential_lead', methods: ['POST'])]
@@ -133,8 +137,8 @@ class PotentialLeadController extends AbstractController
                 return $this->responseService->json(false, 'Organization not found', [], 404);
             }
 
-            // Check permissions
-            $userOrganization = $this->userOrganizationService->getUserOrganization($user, $organization);
+            // Check permissions - FIXED LINE
+            $userOrganization = $this->userOrganizationService->isUserInOrganization($user, $organization);
             if (!$userOrganization) {
                 return $this->responseService->json(false, 'Unauthorized', [], 403);
             }
@@ -191,8 +195,8 @@ class PotentialLeadController extends AbstractController
                 return $this->responseService->json(false, 'Organization not found', [], 404);
             }
 
-            // Check permissions (must be admin)
-            $userOrganization = $this->userOrganizationService->getUserOrganization($user, $organization);
+            // Check permissions (must be admin) - FIXED LINE HERE
+            $userOrganization = $this->userOrganizationService->isUserInOrganization($user, $organization);
             if (!$userOrganization || !in_array($userOrganization->getRole(), ['admin', 'owner', 'creator'])) {
                 return $this->responseService->json(false, 'Unauthorized', [], 403);
             }
@@ -236,8 +240,8 @@ class PotentialLeadController extends AbstractController
                 return $this->responseService->json(false, 'Organization not found', [], 404);
             }
 
-            // Check permissions
-            $userOrganization = $this->userOrganizationService->getUserOrganization($user, $organization);
+            // Check permissions - FIXED LINE
+            $userOrganization = $this->userOrganizationService->isUserInOrganization($user, $organization);
             if (!$userOrganization) {
                 return $this->responseService->json(false, 'Unauthorized', [], 403);
             }
@@ -252,4 +256,64 @@ class PotentialLeadController extends AbstractController
             return $this->responseService->json(false, 'Failed to export potential leads', [], 500);
         }
     }
+
+
+    #[Route('/api/organizations/{organization_id}/events/{event_id}/potential-lead', name: 'add_potential_lead_by_ids', methods: ['POST'], requirements: ['organization_id' => '\d+', 'event_id' => '\d+'])]
+    public function addPotentialLeadByIds(int $organization_id, int $event_id, Request $request): JsonResponse
+    {
+        try {
+            // Get organization
+            $organization = $this->organizationService->getOne($organization_id);
+            if (!$organization) {
+                return $this->responseService->json(false, 'Organization not found', [], 404);
+            }
+
+            // Get event and verify it belongs to the organization
+            $event = $this->eventService->getOne($event_id);
+            if (!$event || $event->getOrganization()->getId() !== $organization_id) {
+                return $this->responseService->json(false, 'Event not found', [], 404);
+            }
+
+            // Get request data
+            $data = json_decode($request->getContent(), true);
+            
+            // Validate required fields
+            if (empty($data['email'])) {
+                return $this->responseService->json(false, 'Email is required', [], 400);
+            }
+
+            // Add timezone if not provided
+            if (empty($data['timezone'])) {
+                $data['timezone'] = $request->headers->get('X-Timezone', 'UTC');
+            }
+
+            // Add captured timestamp
+            $data['captured_at'] = (new \DateTime())->format('Y-m-d H:i:s');
+
+            // Add potential lead
+            $potentialLead = $this->potentialLeadService->addFromEvent($event, $data);
+
+            if ($potentialLead) {
+                return $this->responseService->json(
+                    true, 
+                    'Potential lead captured successfully',
+                    ['id' => $potentialLead->getId()]
+                );
+            } else {
+                // Already exists as contact
+                return $this->responseService->json(
+                    true, 
+                    'Email already registered',
+                    []
+                );
+            }
+
+        } catch (PotentialLeadsException $e) {
+            return $this->responseService->json(false, $e->getMessage(), [], 400);
+        } catch (\Exception $e) {
+            return $this->responseService->json(false, 'An error occurred', [], 500);
+        }
+    }
+
+
 }
