@@ -28,10 +28,10 @@ class WorkflowService
         $this->entityManager = $entityManager;
     }
 
-    public function getMany(array $filters, int $page, int $limit, array $criteria = []): array
+    public function getMany(array $filters, int $page, int $limit, array $criteria = [], ?callable $callback = null, bool $count = false): array
     {
         try {
-            return $this->crudManager->findMany(WorkflowEntity::class, $filters, $page, $limit, $criteria);
+            return $this->crudManager->findMany(WorkflowEntity::class, $filters, $page, $limit, $criteria, $callback, $count);
         } catch (CrudException $e) {
             throw new WorkflowsException($e->getMessage());
         }
@@ -157,39 +157,39 @@ class WorkflowService
 
     // Node management
     public function createNode(WorkflowEntity $workflow, array $data): WorkflowNodeEntity
-{
-    try {
-        $node = new WorkflowNodeEntity();
-        $node->setWorkflow($workflow);
-        $node->setNodeType($data['node_type']);
-        
-        if (isset($data['action_type'])) {
-            $node->setActionType($data['action_type']);
-        }
-        
-        if (isset($data['name'])) {
-            $node->setName($data['name']);
-        }
-        
-        if (isset($data['config']) && is_array($data['config'])) {
-            $node->setConfig($data['config']);
-        } else {
-            $node->setConfig([]);
-        }
-        
-        // Set positions (we'll remove these later)
-        $node->setPositionX($data['position_x'] ?? 0);
-        $node->setPositionY($data['position_y'] ?? 0);
-        
-        // Persist and flush
-        $this->entityManager->persist($node);
-        $this->entityManager->flush();
+    {
+        try {
+            $node = new WorkflowNodeEntity();
+            $node->setWorkflow($workflow);
+            $node->setNodeType($data['node_type']);
+            
+            if (isset($data['action_type'])) {
+                $node->setActionType($data['action_type']);
+            }
+            
+            if (isset($data['name'])) {
+                $node->setName($data['name']);
+            }
+            
+            if (isset($data['config']) && is_array($data['config'])) {
+                $node->setConfig($data['config']);
+            } else {
+                $node->setConfig([]);
+            }
+            
+            // Set positions (we'll remove these later)
+            $node->setPositionX($data['position_x'] ?? 0);
+            $node->setPositionY($data['position_y'] ?? 0);
+            
+            // Persist and flush
+            $this->entityManager->persist($node);
+            $this->entityManager->flush();
 
-        return $node;
-    } catch (\Exception $e) {
-        throw new WorkflowsException($e->getMessage());
+            return $node;
+        } catch (\Exception $e) {
+            throw new WorkflowsException($e->getMessage());
+        }
     }
-}
 
     public function updateNode(WorkflowNodeEntity $node, array $data): void
     {
@@ -272,8 +272,6 @@ class WorkflowService
         ];
     }
 
-
-
     /**
      * Get all nodes for a workflow
      */
@@ -330,5 +328,4 @@ class WorkflowService
     {
         return $this->crudManager->findOne(WorkflowConnectionEntity::class, $id);
     }
-
 }
