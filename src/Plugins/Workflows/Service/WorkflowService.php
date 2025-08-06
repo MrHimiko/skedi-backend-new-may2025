@@ -1,5 +1,4 @@
 <?php
-// src/Plugins/Workflows/Service/WorkflowService.php
 
 namespace App\Plugins\Workflows\Service;
 
@@ -9,8 +8,7 @@ use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\Validator\Constraints as Assert;
 
 use App\Plugins\Workflows\Entity\WorkflowEntity;
-use App\Plugins\Workflows\Entity\WorkflowNodeEntity;
-use App\Plugins\Workflows\Entity\WorkflowConnectionEntity;
+use App\Plugins\Workflows\Entity\WorkflowExecutionEntity;
 use App\Plugins\Workflows\Exception\WorkflowsException;
 use App\Plugins\Organizations\Entity\OrganizationEntity;
 use App\Plugins\Account\Entity\UserEntity;
@@ -49,6 +47,11 @@ class WorkflowService
             $workflow->setOrganization($organization);
             $workflow->setCreatedBy($user);
 
+            // Set default empty flow data if not provided
+            if (!isset($data['flow_data'])) {
+                $data['flow_data'] = [];
+            }
+
             $this->crudManager->create(
                 $workflow,
                 $data,
@@ -64,11 +67,11 @@ class WorkflowService
                     'trigger_type' => [
                         new Assert\NotBlank(),
                         new Assert\Type('string'),
-                        new Assert\Choice([
-                            'choices' => $this->getAvailableTriggers(),
-                        ]),
                     ],
                     'trigger_config' => new Assert\Optional([
+                        new Assert\Type('array'),
+                    ]),
+                    'flow_data' => new Assert\Optional([
                         new Assert\Type('array'),
                     ]),
                     'status' => new Assert\Optional([
@@ -99,11 +102,11 @@ class WorkflowService
                     ]),
                     'trigger_type' => new Assert\Optional([
                         new Assert\Type('string'),
-                        new Assert\Choice([
-                            'choices' => $this->getAvailableTriggers(),
-                        ]),
                     ]),
                     'trigger_config' => new Assert\Optional([
+                        new Assert\Type('array'),
+                    ]),
+                    'flow_data' => new Assert\Optional([
                         new Assert\Type('array'),
                     ]),
                     'status' => new Assert\Optional([
@@ -155,96 +158,19 @@ class WorkflowService
         );
     }
 
-    // Node management
-    public function createNode(WorkflowEntity $workflow, array $data): WorkflowNodeEntity
+    public function updateFlowData(WorkflowEntity $workflow, array $flowData): void
     {
         try {
-            $node = new WorkflowNodeEntity();
-            $node->setWorkflow($workflow);
+            // Validate flow data structure
+            $this->validateFlowData($flowData);
             
-            // Prepare clean data for CrudManager (remove position data)
-            $cleanData = [];
-            if (isset($data['node_type'])) {
-                $cleanData['nodeType'] = $data['node_type'];
-            }
-            if (isset($data['action_type'])) {
-                $cleanData['actionType'] = $data['action_type'];
-            }
-            if (isset($data['name'])) {
-                $cleanData['name'] = $data['name'];
-            }
-            if (isset($data['config'])) {
-                $cleanData['config'] = $data['config'];
-            }
-
-            // Set position manually
-            if (isset($data['position_x'])) {
-                $node->setPositionX($data['position_x']);
-            }
-            if (isset($data['position_y'])) {
-                $node->setPositionY($data['position_y']);
-            }
-
-            $this->crudManager->create(
-                $node,
-                $cleanData,
-                [
-                    'nodeType' => [
-                        new Assert\NotBlank(),
-                        new Assert\Choice(['choices' => ['trigger', 'action', 'condition']]),
-                    ],
-                    'actionType' => new Assert\Optional([
-                        new Assert\Type('string'),
-                    ]),
-                    'name' => new Assert\Optional([
-                        new Assert\Type('string'),
-                    ]),
-                    'config' => new Assert\Optional([
-                        new Assert\Type('array'),
-                    ]),
-                ]
-            );
-
-            return $node;
-        } catch (CrudException $e) {
-            throw new WorkflowsException($e->getMessage());
-        }
-    }
-
-    public function updateNode(WorkflowNodeEntity $node, array $data): void
-    {
-        try {
-            // Prepare clean data for CrudManager
-            $cleanData = [];
-            if (isset($data['name'])) {
-                $cleanData['name'] = $data['name'];
-            }
-            if (isset($data['config'])) {
-                $cleanData['config'] = $data['config'];
-            }
-            if (isset($data['position_x'])) {
-                $cleanData['positionX'] = $data['position_x'];
-            }
-            if (isset($data['position_y'])) {
-                $cleanData['positionY'] = $data['position_y'];
-            }
-
             $this->crudManager->update(
-                $node,
-                $cleanData,
+                $workflow,
+                ['flowData' => $flowData],
                 [
-                    'name' => new Assert\Optional([
-                        new Assert\Type('string'),
-                    ]),
-                    'config' => new Assert\Optional([
+                    'flowData' => [
                         new Assert\Type('array'),
-                    ]),
-                    'positionX' => new Assert\Optional([
-                        new Assert\Type('integer'),
-                    ]),
-                    'positionY' => new Assert\Optional([
-                        new Assert\Type('integer'),
-                    ]),
+                    ]
                 ]
             );
         } catch (CrudException $e) {
@@ -252,146 +178,91 @@ class WorkflowService
         }
     }
 
-    public function deleteNode(WorkflowNodeEntity $node): void
+    public function validateFlowData(array $flowData): bool
     {
-        try {
-            $this->crudManager->delete($node);
-        } catch (CrudException $e) {
-            throw new WorkflowsException($e->getMessage());
+        // Basic validation - can be expanded later
+        if (empty($flowData)) {
+            return true; // Empty flow is allowed
         }
-    }
 
-    // Connection management
-    public function createConnection(WorkflowEntity $workflow, array $data): WorkflowConnectionEntity
-    {
-        try {
-            $connection = new WorkflowConnectionEntity();
-            $connection->setWorkflow($workflow);
+        // Check if steps array exists and is array
+        if (isset($flowData['steps']) && !is_array($flowData['steps'])) {
+            throw new WorkflowsException('Flow data steps must be an array');
+        }
 
-            // Set nodes manually
-            if (!empty($data['from_node_id'])) {
-                $fromNode = $this->crudManager->findOne(WorkflowNodeEntity::class, $data['from_node_id']);
-                if (!$fromNode) {
-                    throw new WorkflowsException('From node not found');
+        // Validate each step has required fields
+        if (isset($flowData['steps'])) {
+            foreach ($flowData['steps'] as $index => $step) {
+                if (!is_array($step)) {
+                    throw new WorkflowsException("Step {$index} must be an array");
                 }
-                $connection->setFromNode($fromNode);
+                
+                if (!isset($step['type']) || empty($step['type'])) {
+                    throw new WorkflowsException("Step {$index} must have a type");
+                }
             }
+        }
 
-            if (empty($data['to_node_id'])) {
-                throw new WorkflowsException('To node ID is required');
-            }
+        return true;
+    }
 
-            $toNode = $this->crudManager->findOne(WorkflowNodeEntity::class, $data['to_node_id']);
-            if (!$toNode) {
-                throw new WorkflowsException('To node not found');
-            }
-            $connection->setToNode($toNode);
+    public function duplicateWorkflow(WorkflowEntity $originalWorkflow, OrganizationEntity $organization, UserEntity $user): WorkflowEntity
+    {
+        try {
+            $data = [
+                'name' => $originalWorkflow->getName() . ' (Copy)',
+                'description' => $originalWorkflow->getDescription(),
+                'trigger_type' => $originalWorkflow->getTriggerType(),
+                'trigger_config' => $originalWorkflow->getTriggerConfig(),
+                'flow_data' => $originalWorkflow->getFlowData(),
+                'status' => 'draft' // Always create copy as draft
+            ];
 
-            // Prepare clean data for CrudManager
-            $cleanData = [];
-            if (isset($data['condition_type'])) {
-                $cleanData['conditionType'] = $data['condition_type'];
-            }
-            if (isset($data['priority'])) {
-                $cleanData['priority'] = $data['priority'];
-            }
+            return $this->create($data, $organization, $user);
+        } catch (CrudException $e) {
+            throw new WorkflowsException($e->getMessage());
+        }
+    }
 
+    // Execution methods
+    public function createExecution(WorkflowEntity $workflow, array $triggerData): WorkflowExecutionEntity
+    {
+        try {
+            $execution = new WorkflowExecutionEntity();
+            $execution->setWorkflow($workflow);
+            
             $this->crudManager->create(
-                $connection,
-                $cleanData,
+                $execution,
                 [
-                    'conditionType' => new Assert\Optional([
-                        new Assert\Choice(['choices' => ['true', 'false', null]]),
-                    ]),
-                    'priority' => new Assert\Optional([
-                        new Assert\Type('integer'),
-                    ]),
+                    'triggerData' => $triggerData,
+                    'status' => 'running'
+                ],
+                [
+                    'triggerData' => [new Assert\Type('array')],
+                    'status' => [new Assert\Choice(['choices' => ['running', 'completed', 'failed']])]
                 ]
             );
 
-            return $connection;
+            return $execution;
         } catch (CrudException $e) {
             throw new WorkflowsException($e->getMessage());
         }
     }
 
-    public function deleteConnection(WorkflowConnectionEntity $connection): void
+    public function updateExecution(WorkflowExecutionEntity $execution, array $data): void
     {
         try {
-            $this->crudManager->delete($connection);
-        } catch (CrudException $e) {
-            throw new WorkflowsException($e->getMessage());
-        }
-    }
-
-    // Get available triggers (this will be extended by integrations)
-    private function getAvailableTriggers(): array
-    {
-        return [
-            'booking.created',
-            'booking.confirmed',
-            'booking.cancelled',
-            'booking.reminder',
-            'event.created',
-            'event.updated',
-            'event.deleted',
-        ];
-    }
-
-    /**
-     * Get all nodes for a workflow
-     */
-    public function getNodesByWorkflow(WorkflowEntity $workflow): array
-    {
-        try {
-            return $this->crudManager->findMany(
-                WorkflowNodeEntity::class,
-                [],
-                1,
-                1000,
+            $this->crudManager->update(
+                $execution,
+                $data,
                 [
-                    'workflow' => $workflow,
-                    'deleted' => false
+                    'executionData' => new Assert\Optional([new Assert\Type('array')]),
+                    'status' => new Assert\Optional([new Assert\Choice(['choices' => ['running', 'completed', 'failed']])]),
+                    'error' => new Assert\Optional([new Assert\Type('string')])
                 ]
             );
         } catch (CrudException $e) {
             throw new WorkflowsException($e->getMessage());
         }
-    }
-
-    /**
-     * Get all connections for a workflow
-     */
-    public function getConnectionsByWorkflow(WorkflowEntity $workflow): array
-    {
-        try {
-            return $this->crudManager->findMany(
-                WorkflowConnectionEntity::class,
-                [],
-                1,
-                1000,
-                [
-                    'workflow' => $workflow
-                ]
-            );
-        } catch (CrudException $e) {
-            throw new WorkflowsException($e->getMessage());
-        }
-    }
-
-    /**
-     * Get a single node by ID
-     */
-    public function getNode(int $id): ?WorkflowNodeEntity
-    {
-        return $this->crudManager->findOne(WorkflowNodeEntity::class, $id);
-    }
-
-    /**
-     * Get a single connection by ID
-     */
-    public function getConnection(int $id): ?WorkflowConnectionEntity
-    {
-        return $this->crudManager->findOne(WorkflowConnectionEntity::class, $id);
     }
 }

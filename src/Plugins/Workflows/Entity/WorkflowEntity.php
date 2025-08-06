@@ -1,5 +1,4 @@
 <?php
-// src/Plugins/Workflows/Entity/WorkflowEntity.php
 
 namespace App\Plugins\Workflows\Entity;
 
@@ -7,8 +6,6 @@ use Doctrine\ORM\Mapping as ORM;
 use App\Plugins\Workflows\Repository\WorkflowRepository;
 use App\Plugins\Organizations\Entity\OrganizationEntity;
 use App\Plugins\Account\Entity\UserEntity;
-use Doctrine\Common\Collections\ArrayCollection;
-use Doctrine\Common\Collections\Collection;
 
 #[ORM\Entity(repositoryClass: WorkflowRepository::class)]
 #[ORM\Table(name: 'workflows')]
@@ -35,6 +32,9 @@ class WorkflowEntity
     #[ORM\Column(name: 'trigger_config', type: 'json')]
     private array $triggerConfig = [];
 
+    #[ORM\Column(name: 'flow_data', type: 'json', nullable: true)]
+    private ?array $flowData = [];
+
     #[ORM\Column(type: 'string', length: 50)]
     private string $status = 'draft';
 
@@ -51,14 +51,10 @@ class WorkflowEntity
     #[ORM\Column(type: 'boolean')]
     private bool $deleted = false;
 
-    #[ORM\OneToMany(mappedBy: 'workflow', targetEntity: WorkflowNodeEntity::class)]
-    private Collection $nodes;
-
     public function __construct()
     {
         $this->createdAt = new \DateTime();
         $this->updatedAt = new \DateTime();
-        $this->nodes = new ArrayCollection();
     }
 
     public function getId(): ?int
@@ -121,6 +117,18 @@ class WorkflowEntity
         return $this;
     }
 
+    public function getFlowData(): array
+    {
+        // Always return an array, even if null
+        return $this->flowData ?? [];
+    }
+
+    public function setFlowData(?array $flowData): self
+    {
+        $this->flowData = $flowData;
+        return $this;
+    }
+
     public function getStatus(): string
     {
         return $this->status;
@@ -176,24 +184,21 @@ class WorkflowEntity
         return $this;
     }
 
-    public function getNodes(): Collection
-    {
-        return $this->nodes;
-    }
-
     public function toArray(): array
     {
         return [
             'id' => $this->id,
             'organization_id' => $this->organization->getId(),
+            'organization_name' => $this->organization->getName(),
             'name' => $this->name,
             'description' => $this->description,
             'trigger_type' => $this->triggerType,
             'trigger_config' => $this->triggerConfig,
+            'flow_data' => $this->getFlowData(), // Use getter to ensure array
             'status' => $this->status,
             'created_at' => $this->createdAt->format('Y-m-d H:i:s'),
             'updated_at' => $this->updatedAt->format('Y-m-d H:i:s'),
-            'created_by' => $this->createdBy ? $this->createdBy->getId() : null,
+            'created_by_id' => $this->createdBy ? $this->createdBy->getId() : null,
         ];
     }
 }
