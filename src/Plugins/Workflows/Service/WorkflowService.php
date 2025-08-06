@@ -161,32 +161,52 @@ class WorkflowService
         try {
             $node = new WorkflowNodeEntity();
             $node->setWorkflow($workflow);
-            $node->setNodeType($data['node_type']);
             
+            // Prepare clean data for CrudManager (remove position data)
+            $cleanData = [];
+            if (isset($data['node_type'])) {
+                $cleanData['nodeType'] = $data['node_type'];
+            }
             if (isset($data['action_type'])) {
-                $node->setActionType($data['action_type']);
+                $cleanData['actionType'] = $data['action_type'];
             }
-            
             if (isset($data['name'])) {
-                $node->setName($data['name']);
+                $cleanData['name'] = $data['name'];
             }
-            
-            if (isset($data['config']) && is_array($data['config'])) {
-                $node->setConfig($data['config']);
-            } else {
-                $node->setConfig([]);
+            if (isset($data['config'])) {
+                $cleanData['config'] = $data['config'];
             }
-            
-            // Set positions (we'll remove these later)
-            $node->setPositionX($data['position_x'] ?? 0);
-            $node->setPositionY($data['position_y'] ?? 0);
-            
-            // Persist and flush
-            $this->entityManager->persist($node);
-            $this->entityManager->flush();
+
+            // Set position manually
+            if (isset($data['position_x'])) {
+                $node->setPositionX($data['position_x']);
+            }
+            if (isset($data['position_y'])) {
+                $node->setPositionY($data['position_y']);
+            }
+
+            $this->crudManager->create(
+                $node,
+                $cleanData,
+                [
+                    'nodeType' => [
+                        new Assert\NotBlank(),
+                        new Assert\Choice(['choices' => ['trigger', 'action', 'condition']]),
+                    ],
+                    'actionType' => new Assert\Optional([
+                        new Assert\Type('string'),
+                    ]),
+                    'name' => new Assert\Optional([
+                        new Assert\Type('string'),
+                    ]),
+                    'config' => new Assert\Optional([
+                        new Assert\Type('array'),
+                    ]),
+                ]
+            );
 
             return $node;
-        } catch (\Exception $e) {
+        } catch (CrudException $e) {
             throw new WorkflowsException($e->getMessage());
         }
     }
@@ -194,7 +214,39 @@ class WorkflowService
     public function updateNode(WorkflowNodeEntity $node, array $data): void
     {
         try {
-            $this->crudManager->update($node, $data);
+            // Prepare clean data for CrudManager
+            $cleanData = [];
+            if (isset($data['name'])) {
+                $cleanData['name'] = $data['name'];
+            }
+            if (isset($data['config'])) {
+                $cleanData['config'] = $data['config'];
+            }
+            if (isset($data['position_x'])) {
+                $cleanData['positionX'] = $data['position_x'];
+            }
+            if (isset($data['position_y'])) {
+                $cleanData['positionY'] = $data['position_y'];
+            }
+
+            $this->crudManager->update(
+                $node,
+                $cleanData,
+                [
+                    'name' => new Assert\Optional([
+                        new Assert\Type('string'),
+                    ]),
+                    'config' => new Assert\Optional([
+                        new Assert\Type('array'),
+                    ]),
+                    'positionX' => new Assert\Optional([
+                        new Assert\Type('integer'),
+                    ]),
+                    'positionY' => new Assert\Optional([
+                        new Assert\Type('integer'),
+                    ]),
+                ]
+            );
         } catch (CrudException $e) {
             throw new WorkflowsException($e->getMessage());
         }
@@ -216,12 +268,17 @@ class WorkflowService
             $connection = new WorkflowConnectionEntity();
             $connection->setWorkflow($workflow);
 
-            // Set nodes
+            // Set nodes manually
             if (!empty($data['from_node_id'])) {
                 $fromNode = $this->crudManager->findOne(WorkflowNodeEntity::class, $data['from_node_id']);
-                if ($fromNode) {
-                    $connection->setFromNode($fromNode);
+                if (!$fromNode) {
+                    throw new WorkflowsException('From node not found');
                 }
+                $connection->setFromNode($fromNode);
+            }
+
+            if (empty($data['to_node_id'])) {
+                throw new WorkflowsException('To node ID is required');
             }
 
             $toNode = $this->crudManager->findOne(WorkflowNodeEntity::class, $data['to_node_id']);
@@ -230,11 +287,20 @@ class WorkflowService
             }
             $connection->setToNode($toNode);
 
+            // Prepare clean data for CrudManager
+            $cleanData = [];
+            if (isset($data['condition_type'])) {
+                $cleanData['conditionType'] = $data['condition_type'];
+            }
+            if (isset($data['priority'])) {
+                $cleanData['priority'] = $data['priority'];
+            }
+
             $this->crudManager->create(
                 $connection,
-                $data,
+                $cleanData,
                 [
-                    'condition_type' => new Assert\Optional([
+                    'conditionType' => new Assert\Optional([
                         new Assert\Choice(['choices' => ['true', 'false', null]]),
                     ]),
                     'priority' => new Assert\Optional([

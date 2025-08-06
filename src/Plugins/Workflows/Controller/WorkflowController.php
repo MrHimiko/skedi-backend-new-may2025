@@ -253,11 +253,29 @@ class WorkflowController extends AbstractController
         try {
             // This will be extended by the registry system
             $actions = [
+                // Logic/Conditions
+                [
+                    'id' => 'condition.paths',
+                    'name' => 'Path conditions',
+                    'description' => 'Split into paths based on conditions',
+                    'category' => 'logic',
+                    'node_type' => 'condition',
+                    'icon' => 'PhGitBranch',
+                    'config_schema' => [
+                        'paths' => [
+                            'type' => 'array',
+                            'label' => 'Condition Paths',
+                            'description' => 'Configure multiple conditional paths'
+                        ]
+                    ]
+                ],
+                // Communication
                 [
                     'id' => 'email.send',
                     'name' => 'Send Email',
                     'description' => 'Send an email to specified recipients',
                     'category' => 'communication',
+                    'node_type' => 'action',
                     'icon' => 'PhEnvelope',
                     'config_schema' => [
                         'to' => [
@@ -279,11 +297,13 @@ class WorkflowController extends AbstractController
                         ]
                     ]
                 ],
+                // Integration
                 [
                     'id' => 'webhook.send',
                     'name' => 'Send Webhook',
                     'description' => 'Send data to an external URL',
                     'category' => 'integration',
+                    'node_type' => 'action',
                     'icon' => 'PhWebhooksLogo',
                     'config_schema' => [
                         'url' => [
@@ -308,6 +328,30 @@ class WorkflowController extends AbstractController
                             'type' => 'json',
                             'label' => 'Body (JSON)',
                             'placeholder' => '{"booking_id": "{{booking.id}}"}'
+                        ]
+                    ]
+                ],
+                // Other actions
+                [
+                    'id' => 'action.delay',
+                    'name' => 'Delay',
+                    'description' => 'Wait for specified time',
+                    'category' => 'logic',
+                    'node_type' => 'action',
+                    'icon' => 'PhClock',
+                    'config_schema' => [
+                        'delay_type' => [
+                            'type' => 'select',
+                            'label' => 'Delay Type',
+                            'options' => ['minutes', 'hours', 'days'],
+                            'default' => 'minutes',
+                            'required' => true
+                        ],
+                        'duration' => [
+                            'type' => 'number',
+                            'label' => 'Duration',
+                            'required' => true,
+                            'min' => 1
                         ]
                     ]
                 ]
@@ -395,6 +439,30 @@ class WorkflowController extends AbstractController
         }
     }
 
+    #[Route('/{id}/nodes', name: 'workflow_node_create#', methods: ['POST'])]
+    public function createNode(int $id, Request $request): JsonResponse
+    {
+        try {
+            $user = $request->attributes->get('user');
+            $data = $request->attributes->get('data');
+            
+            $workflow = $this->workflowService->getOne($id);
+            if (!$workflow || $workflow->getDeleted()) {
+                return $this->responseService->json(false, 'Workflow not found', null, 404);
+            }
+
+            // TODO: Check user permissions for workflow
+
+            $node = $this->workflowService->createNode($workflow, $data);
+
+            return $this->responseService->json(true, 'Node created successfully', $node->toArray(), 201);
+        } catch (WorkflowsException $e) {
+            return $this->responseService->json(false, $e->getMessage(), null, 400);
+        } catch (\Exception $e) {
+            return $this->responseService->json(false, 'An error occurred: ' . $e->getMessage(), null, 500);
+        }
+    }
+
     #[Route('/nodes/{nodeId}', name: 'workflow_node_update#', methods: ['PUT', 'PATCH'])]
     public function updateNode(int $nodeId, Request $request): JsonResponse
     {
@@ -403,7 +471,7 @@ class WorkflowController extends AbstractController
             $data = $request->attributes->get('data');
             
             $node = $this->workflowService->getNode($nodeId);
-            if (!$node) {
+            if (!$node || $node->getDeleted()) {
                 return $this->responseService->json(false, 'Node not found', null, 404);
             }
 
@@ -415,7 +483,77 @@ class WorkflowController extends AbstractController
         } catch (WorkflowsException $e) {
             return $this->responseService->json(false, $e->getMessage(), null, 400);
         } catch (\Exception $e) {
-            return $this->responseService->json(false, 'An error occurred', null, 500);
+            return $this->responseService->json(false, 'An error occurred: ' . $e->getMessage(), null, 500);
+        }
+    }
+
+    #[Route('/nodes/{nodeId}', name: 'workflow_node_delete#', methods: ['DELETE'])]
+    public function deleteNode(int $nodeId, Request $request): JsonResponse
+    {
+        try {
+            $user = $request->attributes->get('user');
+            
+            $node = $this->workflowService->getNode($nodeId);
+            if (!$node || $node->getDeleted()) {
+                return $this->responseService->json(false, 'Node not found', null, 404);
+            }
+
+            // TODO: Check user permissions for workflow
+
+            $this->workflowService->deleteNode($node);
+
+            return $this->responseService->json(true, 'Node deleted successfully');
+        } catch (WorkflowsException $e) {
+            return $this->responseService->json(false, $e->getMessage(), null, 400);
+        } catch (\Exception $e) {
+            return $this->responseService->json(false, 'An error occurred: ' . $e->getMessage(), null, 500);
+        }
+    }
+
+    #[Route('/{id}/connections', name: 'workflow_connection_create#', methods: ['POST'])]
+    public function createConnection(int $id, Request $request): JsonResponse
+    {
+        try {
+            $user = $request->attributes->get('user');
+            $data = $request->attributes->get('data');
+            
+            $workflow = $this->workflowService->getOne($id);
+            if (!$workflow || $workflow->getDeleted()) {
+                return $this->responseService->json(false, 'Workflow not found', null, 404);
+            }
+
+            // TODO: Check user permissions for workflow
+
+            $connection = $this->workflowService->createConnection($workflow, $data);
+
+            return $this->responseService->json(true, 'Connection created successfully', $connection->toArray(), 201);
+        } catch (WorkflowsException $e) {
+            return $this->responseService->json(false, $e->getMessage(), null, 400);
+        } catch (\Exception $e) {
+            return $this->responseService->json(false, 'An error occurred: ' . $e->getMessage(), null, 500);
+        }
+    }
+
+    #[Route('/connections/{connectionId}', name: 'workflow_connection_delete#', methods: ['DELETE'])]
+    public function deleteConnection(int $connectionId, Request $request): JsonResponse
+    {
+        try {
+            $user = $request->attributes->get('user');
+            
+            $connection = $this->workflowService->getConnection($connectionId);
+            if (!$connection) {
+                return $this->responseService->json(false, 'Connection not found', null, 404);
+            }
+
+            // TODO: Check user permissions for workflow
+
+            $this->workflowService->deleteConnection($connection);
+
+            return $this->responseService->json(true, 'Connection deleted successfully');
+        } catch (WorkflowsException $e) {
+            return $this->responseService->json(false, $e->getMessage(), null, 400);
+        } catch (\Exception $e) {
+            return $this->responseService->json(false, 'An error occurred: ' . $e->getMessage(), null, 500);
         }
     }
 
