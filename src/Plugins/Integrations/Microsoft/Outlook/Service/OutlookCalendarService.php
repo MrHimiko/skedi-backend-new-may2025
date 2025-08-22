@@ -112,7 +112,7 @@ class OutlookCalendarService extends IntegrationService
             $this->clientId = 'ca8b407b-677a-44c6-842a-c79e64ba0cd0';
             $this->clientSecret = '3Jm8Q~Pnah2u2xznxe8Cj-Nqgj2EmzN2h1tUdcLp';
             $this->tenantId = '7233e89a-7f4c-4086-9cd1-8b3112ce8360';
-            $this->redirectUri = 'https://dev.skedi.com/oauth/outlook/callback';
+            $this->redirectUri = 'https://app.skedi.com/oauth/outlook/callback';
             // Default to common tenant if not specified
             $this->authority = 'https://login.microsoftonline.com/' . ($this->tenantId ?: 'common');
         } catch (\Exception $e) {
@@ -121,7 +121,7 @@ class OutlookCalendarService extends IntegrationService
             $this->clientId = 'ca8b407b-677a-44c6-842a-c79e64ba0cd0';
             $this->clientSecret = '3Jm8Q~Pnah2u2xznxe8Cj-Nqgj2EmzN2h1tUdcLp';
             $this->tenantId = '7233e89a-7f4c-4086-9cd1-8b3112ce8360';
-            $this->redirectUri = 'https://dev.skedi.com/oauth/outlook/callback';
+            $this->redirectUri = 'https://app.skedi.com/oauth/outlook/callback';
             $this->authority = 'https://login.microsoftonline.com/common';
         }
     }   

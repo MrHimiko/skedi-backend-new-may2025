@@ -155,7 +155,7 @@ class InvitationService
             : $invitation->getOrganization()->getName() . ' organization';
 
         // Use a default URL if FRONTEND_URL is not set
-        $frontendUrl = $_ENV['FRONTEND_URL'] ?? 'https://dev.skedi.com';
+        $frontendUrl = $_ENV['FRONTEND_URL'] ?? 'https://app.skedi.com';
 
         $emailData = [
             'to' => $invitation->getEmail(),

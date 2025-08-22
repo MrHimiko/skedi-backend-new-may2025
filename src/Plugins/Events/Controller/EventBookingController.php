@@ -97,6 +97,59 @@ class EventBookingController extends AbstractController
         }
     }
 
+
+    #[Route('/events/{event_id}/bookings/stats', name: 'event_bookings_stats', methods: ['GET'], requirements: ['event_id' => '\d+'])]
+    public function getBookingStats(int $organization_id, int $event_id, Request $request): JsonResponse
+    {
+        $user = $request->attributes->get('user');
+
+        try {
+            // Check if user has access to this organization
+            if (!$organization = $this->userOrganizationService->getOrganizationByUser($organization_id, $user)) {
+                return $this->responseService->json(false, 'Organization was not found.');
+            }
+            
+            // Get event by ID ensuring it belongs to the organization
+            if (!$event = $this->eventService->getEventByIdAndOrganization($event_id, $organization->entity)) {
+                return $this->responseService->json(false, 'Event was not found.');
+            }
+            
+            // Get all bookings for this event (including cancelled)
+            $allBookings = $this->bookingService->getBookingsByEvent($event, [], true);
+            
+            $stats = [
+                'total' => 0,
+                'upcoming' => 0,
+                'past' => 0,
+                'canceled' => 0,
+                'pending' => 0
+            ];
+            
+            $now = new \DateTime();
+            
+            foreach ($allBookings as $booking) {
+                $stats['total']++;
+                
+                if ($booking->isCancelled()) {
+                    $stats['canceled']++;
+                } elseif ($booking->getStatus() === 'pending') {
+                    $stats['pending']++;
+                } elseif ($booking->getStartTime() > $now) {
+                    $stats['upcoming']++;
+                } else {
+                    $stats['past']++;
+                }
+            }
+            
+            return $this->responseService->json(true, 'Booking statistics retrieved successfully.', $stats);
+        } catch (EventsException $e) {
+            return $this->responseService->json(false, $e->getMessage(), null, 400);
+        } catch (\Exception $e) {
+            return $this->responseService->json(false, $e, null, 500);
+        }
+    }
+
+
     #[Route('/events/{event_id}/bookings/{id}', name: 'event_bookings_get_one#', methods: ['GET'], requirements: ['event_id' => '\d+', 'id' => '\d+'])]
     public function getBookingById(int $organization_id, int $event_id, int $id, Request $request): JsonResponse
     {
@@ -389,7 +442,7 @@ class EventBookingController extends AbstractController
             }
             
             // Generate reschedule link - you'll need to adjust this based on your URL structure
-            $baseUrl = $_ENV['APP_URL'] ?? 'https://dev.skedi.com';
+            $baseUrl = $_ENV['APP_URL'] ?? 'https://app.skedi.com';
             $orgSlug = $organization ? $organization->getSlug() : '';
             $eventSlug = $event->getSlug();
             $rescheduleLink = $baseUrl . '/organizations/' . $orgSlug . '/events/' . $eventSlug . '/bookings/' . $booking->getId() . '/reschedule';
@@ -540,7 +593,7 @@ class EventBookingController extends AbstractController
             }
             
             // Generate calendar link (you can customize this based on your needs)
-            $baseUrl = $_ENV['APP_URL'] ?? 'https://dev.skedi.com';
+            $baseUrl = $_ENV['APP_URL'] ?? 'https://app.skedi.com';
             $calendarLink = $baseUrl . '/bookings/' . $booking->getId();
             
             // Get all assignees (hosts) for this event using the assignee service
