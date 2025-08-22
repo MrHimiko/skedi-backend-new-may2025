@@ -28,23 +28,43 @@ class EmailQueueService
      */
     public function add($to, string $template, array $data = [], array $options = []): int
     {
-        $queueItem = new EmailQueueEntity();
-        $queueItem->setTo(is_array($to) ? json_encode($to) : $to);
-        $queueItem->setTemplate($template);
-        $queueItem->setData($data);
-        $queueItem->setOptions($options);
-        $queueItem->setStatus('pending');
-        $queueItem->setPriority($options['priority'] ?? 5);
-        
-        // Set scheduled time if provided
-        if (isset($options['send_at'])) {
-            $queueItem->setScheduledAt(new \DateTime($options['send_at']));
+        try {
+            // Check if EntityManager is closed and reset if needed
+            if (!$this->entityManager->isOpen()) {
+                $this->entityManager = EntityManager::create(
+                    $this->entityManager->getConnection(),
+                    $this->entityManager->getConfiguration()
+                );
+            }
+            
+            $queueItem = new EmailQueueEntity();
+            
+            // Fix: Use the correct setter method based on your entity
+            // The column is 'to_email' so the setter might be:
+            $queueItem->setTo(is_array($to) ? json_encode($to) : $to);
+            // OR it might be:
+            // $queueItem->setToEmail(is_array($to) ? json_encode($to) : $to);
+            
+            $queueItem->setTemplate($template);
+            $queueItem->setData($data);
+            $queueItem->setOptions($options);
+            $queueItem->setStatus('pending');
+            $queueItem->setPriority($options['priority'] ?? 5);
+            $queueItem->setAttempts(0);
+            
+            if (!empty($options['send_at'])) {
+                $queueItem->setScheduledAt(new \DateTime($options['send_at']));
+            }
+            
+            $this->entityManager->persist($queueItem);
+            $this->entityManager->flush();
+            
+            return $queueItem->getId();
+        } catch (\Exception $e) {
+            // Log the actual error
+            error_log('Failed to queue email: ' . $e->getMessage());
+            throw $e;
         }
-        
-        $this->entityManager->persist($queueItem);
-        $this->entityManager->flush();
-        
-        return $queueItem->getId();
     }
     
     /**

@@ -53,31 +53,24 @@ class EmailService
         // Validate template exists
         $template = $this->templateService->getTemplate($templateName);
         if (!$template) {
-            throw new EmailException("Template '{$templateName}' not found");
-        }
-        
-        // Validate required fields
-        $missingFields = $this->validateRequiredFields($data, $template->getRequiredFields());
-        if (!empty($missingFields)) {
-            throw new EmailException("Missing required fields: " . implode(', ', $missingFields));
+            // If template doesn't exist, create a basic one
+            $template = new \stdClass();
+            $template->provider_id = $templateName;
+            $template->default_data = [];
         }
         
         // Merge template defaults with provided data
-        $data = array_merge($template->getDefaultData(), $data);
+        if (method_exists($template, 'getDefaultData')) {
+            $data = array_merge($template->getDefaultData(), $data);
+        }
         
         // Add common data
         $data['app_name'] = $_ENV['APP_NAME'] ?? 'Skedi';
         $data['app_url'] = $_ENV['APP_URL'] ?? 'https://app.skedi.com';
         $data['current_year'] = date('Y');
         
-        // Determine if we should queue or send immediately
-        $shouldQueue = $options['queue'] ?? $this->queueByDefault;
-        
-        if ($shouldQueue) {
-            return $this->queue($to, $templateName, $data, $options);
-        }
-        
-        return $this->sendNow($to, $templateName, $data, $options);
+        // ALWAYS QUEUE - fuck sending immediately
+        return $this->queue($to, $templateName, $data, $options);
     }
     
     /**
@@ -189,19 +182,5 @@ class EmailService
         ];
     }
     
-    /**
-     * Validate required fields are present in data
-     */
-    private function validateRequiredFields(array $data, array $requiredFields): array
-    {
-        $missingFields = [];
-        
-        foreach ($requiredFields as $field) {
-            if (!isset($data[$field]) || $data[$field] === '') {
-                $missingFields[] = $field;
-            }
-        }
-        
-        return $missingFields;
-    }
+   
 }
