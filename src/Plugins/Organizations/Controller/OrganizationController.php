@@ -13,6 +13,7 @@ use App\Plugins\Organizations\Exception\OrganizationsException;
 use Doctrine\ORM\EntityManagerInterface;
 use App\Plugins\Teams\Entity\TeamEntity;
 use App\Plugins\Events\Entity\EventEntity;
+use App\Service\CrudManager;
 
 #[Route('/api')]
 class OrganizationController extends AbstractController
@@ -21,17 +22,20 @@ class OrganizationController extends AbstractController
     private OrganizationService $organizationService;
     private UserOrganizationService $userOrganizationService;
     private EntityManagerInterface $entityManager;
+    private CrudManager $crudManager;
 
     public function __construct(
         ResponseService $responseService,
         OrganizationService $organizationService,
         UserOrganizationService $userOrganizationService,
-        EntityManagerInterface $entityManager
+        EntityManagerInterface $entityManager,
+        CrudManager $crudManager
     ) {
         $this->responseService = $responseService;
         $this->organizationService = $organizationService;
         $this->userOrganizationService = $userOrganizationService;
         $this->entityManager = $entityManager;
+        $this->crudManager = $crudManager;
     }
 
     #[Route('/organizations', name: 'organizations_get_many#', methods: ['GET'])]
@@ -248,4 +252,82 @@ class OrganizationController extends AbstractController
         $team->setDeleted(true);
         $this->entityManager->persist($team);
     }
+
+
+    #[Route('/public/organizations/{slug}', name: 'public_organizations_get_by_slug', methods: ['GET'])]
+    public function getPublicOrganizationBySlug(string $slug, Request $request): JsonResponse
+    {
+        try {
+            // Find organization by slug
+            $organization = $this->organizationService->getBySlug($slug);
+
+            if (!$organization) {
+                return $this->responseService->json(false, 'Organization not found.', null, 404);
+            }
+
+            // Get root-level teams (teams directly under organization, not nested)
+            $rootTeams = $this->crudManager->findMany(
+                TeamEntity::class,
+                [],
+                1,
+                100,
+                [
+                    'organization' => $organization,
+                    'parentTeam' => null, // Only root-level teams
+                    'deleted' => false
+                ],
+                function ($queryBuilder) {
+                    $queryBuilder->orderBy('t1.name', 'ASC');
+                }
+            );
+
+            // Get organization events (events without team assignment)
+           $organizationEvents = $this->crudManager->findMany(
+                EventEntity::class,
+                [],
+                1,
+                100,
+                [
+                    'organization' => $organization,
+                    'team' => null, // Only events not assigned to teams
+                    'deleted' => false
+                ],
+                function ($queryBuilder) {
+                    $queryBuilder->orderBy('t1.created', 'DESC'); // FIXED: createdAt -> created
+                }
+            );
+
+            // Format response with limited public data
+            $response = [
+                'id' => $organization->getId(),
+                'name' => $organization->getName(),
+                'slug' => $organization->getSlug(),
+                'teams' => array_map(function($team) {
+                    return [
+                        'id' => $team->getId(),
+                        'name' => $team->getName(),
+                        'slug' => $team->getSlug(),
+
+                    ];
+                }, $rootTeams),
+                'events' => array_map(function($event) {
+                    return [
+                        'id' => $event->getId(),
+                        'name' => $event->getName(),
+                        'slug' => $event->getSlug(),
+                        'duration' => $event->getDuration(),
+                        'created_at' => $event->getCreatedAt()->format('Y-m-d H:i:s')
+                    ];
+                }, $organizationEvents)
+            ];
+
+            return $this->responseService->json(true, 'Organization retrieved successfully.', $response);
+
+        } catch (OrganizationsException $e) {
+            return $this->responseService->json(false, $e->getMessage(), null, 400);
+        } catch (\Exception $e) {
+            return $this->responseService->json(false, $e->getMessage(), null, 500);
+        }
+    }
+
 }

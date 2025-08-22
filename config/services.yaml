@@ -57,26 +57,36 @@ services:
     App\Plugins\Integrations\Google\Calendar\Service\GoogleCalendarService: '@app.integration.google_calendar'
     App\Plugins\Integrations\Google\Meet\Service\GoogleMeetService: '@app.integration.google_meet'
 
-    # Email Services
-    App\Plugins\Email\Service\EmailProviderInterface:
-        class: App\Plugins\Email\Service\Providers\SendGridProvider
+
+
+    App\Plugins\Email\Service\Providers\ResendProvider:
         arguments:
-            $apiKey: '%env(SENDGRID_API_KEY)%'
+            $apiKey: '%env(RESEND_API_KEY)%'
             $logger: '@logger'
             $templateMap:
-                meeting_scheduled: 'd-877ae9faa55c481db86b24fe1cfd0a62'  
+                meeting_scheduled: ~
+                meeting_scheduled_host: ~
+                meeting_reminder: ~
+                meeting_cancelled: ~
+                booking_created: ~
+                booking_confirmed: ~
+                invitation: ~
+                user_welcome: ~
+                team_invitation: ~
+                blank: ~
 
-
+    # Update the EmailService to use ResendProvider
     App\Plugins\Email\Service\EmailService:
         arguments:
-            $provider: '@App\Plugins\Email\Service\EmailProviderInterface'
+            $provider: '@App\Plugins\Email\Service\Providers\ResendProvider'
             $queueService: '@App\Plugins\Email\Service\EmailQueueService'
             $templateService: '@App\Plugins\Email\Service\EmailTemplateService'
             $logService: '@App\Plugins\Email\Service\EmailLogService'
             $crudManager: '@App\Service\CrudManager'
             $entityManager: '@doctrine.orm.entity_manager'
             $logger: '@logger'
-            $queueByDefault: '%env(bool:EMAIL_QUEUE_BY_DEFAULT)%'
+            $queueByDefault: true
+
 
     App\Plugins\Email\Service\EmailQueueService:
         arguments:
