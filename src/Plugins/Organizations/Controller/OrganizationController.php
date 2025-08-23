@@ -15,6 +15,7 @@ use App\Plugins\Teams\Entity\TeamEntity;
 use App\Plugins\Events\Entity\EventEntity;
 use App\Service\CrudManager;
 
+
 #[Route('/api')]
 class OrganizationController extends AbstractController
 {
@@ -254,7 +255,7 @@ class OrganizationController extends AbstractController
     }
 
 
-    #[Route('/public/organizations/{slug}', name: 'public_organizations_get_by_slug', methods: ['GET'])]
+   #[Route('/public/organizations/{slug}', name: 'public_organizations_get_by_slug', methods: ['GET'])]
     public function getPublicOrganizationBySlug(string $slug, Request $request): JsonResponse
     {
         try {
@@ -265,39 +266,49 @@ class OrganizationController extends AbstractController
                 return $this->responseService->json(false, 'Organization not found.', null, 404);
             }
 
-            // Get root-level teams (teams directly under organization, not nested)
-            $rootTeams = $this->crudManager->findMany(
-                TeamEntity::class,
-                [],
-                1,
-                100,
-                [
-                    'organization' => $organization,
-                    'parentTeam' => null, // Only root-level teams
-                    'deleted' => false
-                ],
-                function ($queryBuilder) {
-                    $queryBuilder->orderBy('t1.name', 'ASC');
-                }
-            );
+            // Get ALL teams that belong to this organization (both root and nested)
+            $allTeams = [];
+            try {
+                $allTeams = $this->crudManager->findMany(
+                    TeamEntity::class,
+                    [],
+                    1,
+                    100,
+                    [
+                        'organization' => $organization,
+                        'deleted' => false
+                    ],
+                    function ($queryBuilder) {
+                        $queryBuilder->orderBy('t1.name', 'ASC');
+                    }
+                );
+            } catch (\Exception $e) {
+                error_log('Error fetching teams: ' . $e->getMessage());
+                $allTeams = [];
+            }
 
-            // Get organization events (events without team assignment)
-           $organizationEvents = $this->crudManager->findMany(
-                EventEntity::class,
-                [],
-                1,
-                100,
-                [
-                    'organization' => $organization,
-                    'team' => null, // Only events not assigned to teams
-                    'deleted' => false
-                ],
-                function ($queryBuilder) {
-                    $queryBuilder->orderBy('t1.created', 'DESC'); // FIXED: createdAt -> created
-                }
-            );
+            // Get ALL events that belong to this organization (both team-assigned and organization-level)
+            $allEvents = [];
+            try {
+                $allEvents = $this->crudManager->findMany(
+                    EventEntity::class,
+                    [],
+                    1,
+                    100,
+                    [
+                        'organization' => $organization,
+                        'deleted' => false
+                    ],
+                    function ($queryBuilder) {
+                        $queryBuilder->orderBy('t1.created', 'DESC');
+                    }
+                );
+            } catch (\Exception $e) {
+                error_log('Error fetching events: ' . $e->getMessage());
+                $allEvents = [];
+            }
 
-            // Format response with limited public data
+            // Format response with limited public data INCLUDING parent team info
             $response = [
                 'id' => $organization->getId(),
                 'name' => $organization->getName(),
@@ -307,18 +318,25 @@ class OrganizationController extends AbstractController
                         'id' => $team->getId(),
                         'name' => $team->getName(),
                         'slug' => $team->getSlug(),
-
+                        'parent_team_id' => $team->getParentTeam() ? $team->getParentTeam()->getId() : null,  // ADD THIS
+                        'parent_team' => $team->getParentTeam() ? [  // ADD THIS
+                            'id' => $team->getParentTeam()->getId(),
+                            'name' => $team->getParentTeam()->getName(),
+                            'slug' => $team->getParentTeam()->getSlug()
+                        ] : null
                     ];
-                }, $rootTeams),
+                }, $allTeams),
                 'events' => array_map(function($event) {
                     return [
                         'id' => $event->getId(),
                         'name' => $event->getName(),
                         'slug' => $event->getSlug(),
                         'duration' => $event->getDuration(),
-                        'created_at' => $event->getCreatedAt()->format('Y-m-d H:i:s')
+                        'team_id' => $event->getTeam() ? $event->getTeam()->getId() : null,
+                        'team_name' => $event->getTeam() ? $event->getTeam()->getName() : null,
+                        'created_at' => $event->getCreated() ? $event->getCreated()->format('Y-m-d H:i:s') : null
                     ];
-                }, $organizationEvents)
+                }, $allEvents)
             ];
 
             return $this->responseService->json(true, 'Organization retrieved successfully.', $response);
@@ -326,8 +344,168 @@ class OrganizationController extends AbstractController
         } catch (OrganizationsException $e) {
             return $this->responseService->json(false, $e->getMessage(), null, 400);
         } catch (\Exception $e) {
-            return $this->responseService->json(false, $e->getMessage(), null, 500);
+            // Don't expose internal errors to public API
+            error_log('Public organization API error: ' . $e->getMessage() . ' in ' . $e->getFile() . ' on line ' . $e->getLine());
+            return $this->responseService->json(false, 'An error occurred while retrieving organization data.', null, 500);
         }
     }
 
+
+
+#[Route('/public/teams/{orgSlug}/{teamSlug}', name: 'public_teams_get_by_slug', methods: ['GET'])]
+    public function getPublicTeamBySlug(string $orgSlug, string $teamSlug, Request $request): JsonResponse
+    {
+        try {
+            // Find organization by slug
+            $organization = $this->organizationService->getBySlug($orgSlug);
+
+            if (!$organization) {
+                return $this->responseService->json(false, 'Organization not found.', null, 404);
+            }
+
+            // Find team by slug within organization
+            $teams = [];
+            try {
+                $teams = $this->crudManager->findMany(
+                    TeamEntity::class,
+                    [],
+                    1,
+                    1,
+                    [
+                        'slug' => $teamSlug,
+                        'organization' => $organization,
+                        'deleted' => false
+                    ]
+                );
+            } catch (\Exception $e) {
+                error_log('Error fetching team: ' . $e->getMessage());
+                return $this->responseService->json(false, 'Team not found.', null, 404);
+            }
+
+            if (empty($teams)) {
+                return $this->responseService->json(false, 'Team not found.', null, 404);
+            }
+
+            $team = $teams[0]; // Get the first (and only) result
+
+            // Get ALL descendant teams (children, grandchildren, etc.) recursively
+            $allSubTeams = [];
+            try {
+                $allSubTeams = $this->getAllDescendantTeams($team);
+            } catch (\Exception $e) {
+                error_log('Error fetching sub-teams for team ' . $team->getId() . ': ' . $e->getMessage());
+                $allSubTeams = [];
+            }
+
+            // Get team events
+            $teamEvents = [];
+            try {
+                $teamEvents = $this->crudManager->findMany(
+                    EventEntity::class,
+                    [],
+                    1,
+                    100,
+                    [
+                        'team' => $team,
+                        'deleted' => false
+                    ],
+                    function ($queryBuilder) {
+                        $queryBuilder->orderBy('t1.created', 'DESC');
+                    }
+                );
+            } catch (\Exception $e) {
+                error_log('Error fetching events for team ' . $team->getId() . ': ' . $e->getMessage());
+                $teamEvents = [];
+            }
+
+            // Format response with complete hierarchy data
+            $response = [
+                'id' => $team->getId(),
+                'name' => $team->getName(),
+                'slug' => $team->getSlug(),
+
+                'organization' => [
+                    'id' => $organization->getId(),
+                    'name' => $organization->getName(),
+                    'slug' => $organization->getSlug()
+                ],
+                'parent_team' => $team->getParentTeam() ? [
+                    'id' => $team->getParentTeam()->getId(),
+                    'name' => $team->getParentTeam()->getName(),
+                    'slug' => $team->getParentTeam()->getSlug()
+                ] : null,
+                'sub_teams' => array_map(function($subTeam) {
+                    return [
+                        'id' => $subTeam->getId(),
+                        'name' => $subTeam->getName(),
+                        'slug' => $subTeam->getSlug(),
+
+                        'parent_team_id' => $subTeam->getParentTeam() ? $subTeam->getParentTeam()->getId() : null,
+                        'parent_team' => $subTeam->getParentTeam() ? [
+                            'id' => $subTeam->getParentTeam()->getId(),
+                            'name' => $subTeam->getParentTeam()->getName(),
+                            'slug' => $subTeam->getParentTeam()->getSlug()
+                        ] : null
+                    ];
+                }, $allSubTeams),
+                'events' => array_map(function($event) {
+                    return [
+                        'id' => $event->getId(),
+                        'name' => $event->getName(),
+                        'slug' => $event->getSlug(),
+                        'description' => $event->getDescription(),
+                        'duration' => $event->getDuration(),
+                        'created_at' => $event->getCreated() ? $event->getCreated()->format('Y-m-d H:i:s') : null
+                    ];
+                }, $teamEvents)
+            ];
+
+            return $this->responseService->json(true, 'Team retrieved successfully.', $response);
+
+        } catch (\Exception $e) {
+            // Don't expose internal errors to public API
+            error_log('Public team API error: ' . $e->getMessage() . ' in ' . $e->getFile() . ' on line ' . $e->getLine());
+            return $this->responseService->json(false, 'An error occurred while retrieving team data.', null, 500);
+        }
+    }
+
+    /**
+     * Helper method to recursively get all descendant teams
+     */
+    private function getAllDescendantTeams(TeamEntity $parentTeam): array
+    {
+        $allDescendants = [];
+        
+        try {
+            // Get direct children
+            $directChildren = $this->crudManager->findMany(
+                TeamEntity::class,
+                [],
+                1,
+                100,
+                [
+                    'parentTeam' => $parentTeam,
+                    'deleted' => false
+                ],
+                function ($queryBuilder) {
+                    $queryBuilder->orderBy('t1.name', 'ASC');
+                }
+            );
+
+            foreach ($directChildren as $child) {
+                // Add the child
+                $allDescendants[] = $child;
+                
+                // Recursively get grandchildren, great-grandchildren, etc.
+                $grandChildren = $this->getAllDescendantTeams($child);
+                $allDescendants = array_merge($allDescendants, $grandChildren);
+            }
+
+        } catch (\Exception $e) {
+            error_log('Error fetching descendant teams for team ' . $parentTeam->getId() . ': ' . $e->getMessage());
+        }
+
+        return $allDescendants;
+    }
+    
 }

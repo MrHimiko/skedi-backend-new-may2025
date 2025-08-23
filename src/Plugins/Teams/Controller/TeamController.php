@@ -15,6 +15,8 @@ use Doctrine\ORM\EntityManagerInterface;
 use App\Plugins\Teams\Entity\TeamEntity;
 use App\Plugins\Events\Entity\EventEntity;
 use App\Service\CrudManager;
+use App\Plugins\Organizations\Service\OrganizationService;
+
 
 #[Route('/api/organizations/{organization_id}', requirements: ['organization_id' => '\d+'])]
 class TeamController extends AbstractController
@@ -26,6 +28,7 @@ class TeamController extends AbstractController
     private TeamPermissionService $permissionService;
     private EntityManagerInterface $entityManager;
     private CrudManager $crudManager;
+    private OrganizationService $organizationService;
 
     public function __construct(
         ResponseService $responseService,
@@ -34,7 +37,8 @@ class TeamController extends AbstractController
         UserOrganizationService $userOrganizationService,
         TeamPermissionService $permissionService,
         EntityManagerInterface $entityManager,
-        CrudManager $crudManager
+        CrudManager $crudManager,
+        OrganizationService $organizationService 
     ) {
         $this->responseService = $responseService;
         $this->teamService = $teamService;
@@ -43,6 +47,7 @@ class TeamController extends AbstractController
         $this->permissionService = $permissionService;
         $this->entityManager = $entityManager;
         $this->crudManager = $crudManager;
+        $this->organizationService = $organizationService;
     }
 
     #[Route('/teams', name: 'teams_get_many#', methods: ['GET'])]
@@ -479,103 +484,6 @@ class TeamController extends AbstractController
     }
 
 
-    #[Route('/api/public/organizations/{orgSlug}/teams/{teamSlug}', name: 'public_teams_get_by_slug', methods: ['GET'])]
-    public function getPublicTeamBySlug(string $orgSlug, string $teamSlug, Request $request): JsonResponse
-    {
-        try {
-            // Find organization by slug
-            $organization = $this->organizationService->getBySlug($orgSlug);
-
-            if (!$organization) {
-                return $this->responseService->json(false, 'Organization not found.', null, 404);
-            }
-
-            // Find team by slug within organization
-            $team = $this->teamService->getBySlug($teamSlug, [
-                'organization' => $organization,
-                'deleted' => false
-            ]);
-
-            if (!$team) {
-                return $this->responseService->json(false, 'Team not found.', null, 404);
-            }
-
-            // Get sub-teams (child teams)
-            $subTeams = $this->crudManager->findMany(
-                TeamEntity::class,
-                [],
-                1,
-                100,
-                [
-                    'parentTeam' => $team,
-                    'deleted' => false
-                ],
-                function ($queryBuilder) {
-                    $queryBuilder->orderBy('t1.name', 'ASC');
-                }
-            );
-
-            // Get team events
-            $teamEvents = $this->crudManager->findMany(
-                EventEntity::class,
-                [],
-                1,
-                100,
-                [
-                    'team' => $team,
-                    'deleted' => false
-                    // REMOVED: 'public' => true (field doesn't exist)
-                ],
-                function ($queryBuilder) {
-                    $queryBuilder->orderBy('t1.created', 'DESC');
-                }
-            );
-
-            // Format response with limited public data
-            $response = [
-                'id' => $team->getId(),
-                'name' => $team->getName(),
-                'slug' => $team->getSlug(),
-                'description' => $team->getDescription(),
-                'organization' => [
-                    'id' => $organization->getId(),
-                    'name' => $organization->getName(),
-                    'slug' => $organization->getSlug()
-                ],
-                'parent_team' => $team->getParentTeam() ? [
-                    'id' => $team->getParentTeam()->getId(),
-                    'name' => $team->getParentTeam()->getName(),
-                    'slug' => $team->getParentTeam()->getSlug()
-                ] : null,
-                'sub_teams' => array_map(function($subTeam) {
-                    return [
-                        'id' => $subTeam->getId(),
-                        'name' => $subTeam->getName(),
-                        'slug' => $subTeam->getSlug(),
-                        'description' => $subTeam->getDescription()
-                    ];
-                }, $subTeams),
-                'events' => array_map(function($event) {
-                    return [
-                        'id' => $event->getId(),
-                        'name' => $event->getName(),
-                        'slug' => $event->getSlug(),
-                        'description' => $event->getDescription(),
-                        'duration' => $event->getDuration(),
-                        'created_at' => $event->getCreatedAt()->format('Y-m-d H:i:s')
-                    ];
-                }, $teamEvents)
-            ];
-
-            return $this->responseService->json(true, 'Team retrieved successfully.', $response);
-
-        } catch (TeamsException $e) {
-            return $this->responseService->json(false, $e->getMessage(), null, 400);
-        } catch (\Exception $e) {
-            return $this->responseService->json(false, $e->getMessage(), null, 500);
-        }
-    }
-
-
+    
 
 }
