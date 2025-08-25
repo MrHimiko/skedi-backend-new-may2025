@@ -216,26 +216,46 @@ class FormService
 
     public function update(FormEntity $form, array $data): void
     {
-        try {
-            // Auto-generate slug from name if name is being updated
-            if (isset($data['name']) && !isset($data['slug'])) {
-                $data['slug'] = $this->slugService->generateSlug($data['name']);
+    try {
+        // Auto-generate slug from name if name is being updated
+        if (isset($data['name']) && !isset($data['slug'])) {
+            $data['slug'] = $this->slugService->generateSlug($data['name']);
+        }
+        
+        // Handle organization_id separately
+        if (isset($data['organization_id'])) {
+            $organization = $this->crudManager->findOne(
+                'App\Plugins\Organizations\Entity\OrganizationEntity',
+                $data['organization_id']
+            );
+            if (!$organization) {
+                throw new FormsException('Organization not found.');
             }
-            
-            // Handle organization_id separately
-            if (isset($data['organization_id'])) {
-                $organization = $this->crudManager->findOne(
-                    'App\Plugins\Organizations\Entity\OrganizationEntity',
-                    $data['organization_id']
-                );
-                if (!$organization) {
-                    throw new FormsException('Organization not found.');
-                }
-                $form->setOrganization($organization);
-                // Remove from data to avoid validation issues
-                unset($data['organization_id']);
-            }
-            
+            $form->setOrganization($organization);
+            // Remove from data to avoid validation issues
+            unset($data['organization_id']);
+        }
+        
+        // Manually set the fields and persist directly
+        if (isset($data['fields'])) {
+            $form->setFieldsJson($data['fields']);
+            $this->entityManager->persist($form);
+            $this->entityManager->flush();
+        }
+        
+        // Also handle settings manually if present
+        if (isset($data['settings'])) {
+            $form->setSettingsJson($data['settings']);
+            $this->entityManager->persist($form);
+            $this->entityManager->flush();
+        }
+        
+        // Remove fields and settings from data since we handled them manually
+        unset($data['fields']);
+        unset($data['settings']);
+        
+        // Only update other properties through CrudManager if there are any left
+        if (!empty($data)) {
             $constraints = [
                 'name' => [
                     new Assert\Length(['max' => 255])
@@ -245,12 +265,6 @@ class FormService
                 ],
                 'description' => [
                     new Assert\Length(['max' => 65535])
-                ],
-                'fields' => [
-                    new Assert\Type('array')
-                ],
-                'settings' => [
-                    new Assert\Type('array')
                 ],
                 'is_active' => [
                     new Assert\Type('bool')
@@ -263,13 +277,14 @@ class FormService
                 ]
             ];
 
-            // Don't use transform callbacks - let CrudManager handle the setters directly
             $this->crudManager->update($form, $data, $constraints);
-            
-        } catch (CrudException $e) {
-            throw new FormsException($e->getMessage());
         }
+        
+    } catch (CrudException $e) {
+        throw new FormsException($e->getMessage());
     }
+    }
+
 
     public function delete(FormEntity $form, bool $hard = false): void
     {

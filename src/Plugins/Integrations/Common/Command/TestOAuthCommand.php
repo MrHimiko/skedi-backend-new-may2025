@@ -1,7 +1,7 @@
 <?php
 // src/Command/TestOAuthCommand.php
 
-namespace App\Command;
+namespace App\Plugins\Integrations\Common\Command;
 
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
