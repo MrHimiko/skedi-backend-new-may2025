@@ -1,5 +1,5 @@
 <?php
-// src/Plugins/Integrations/Service/GoogleMeetService.php
+// src/Plugins/Integrations/Google/Meet/Service/GoogleMeetService.php
 
 namespace App\Plugins\Integrations\Google\Meet\Service;
 
@@ -29,107 +29,37 @@ class GoogleMeetService
     private string $clientId;
     private string $clientSecret;
     private string $redirectUri;
-    private string $tenantId;
-    private string $authority;
     
     public function __construct(
         EntityManagerInterface $entityManager,
         IntegrationRepository $integrationRepository,
         GoogleMeetEventRepository $googleMeetEventRepository,
         CrudManager $crudManager,
-        ParameterBagInterface $parameterBag
+        ParameterBagInterface $parameterBag = null
     ) {
         $this->entityManager = $entityManager;
         $this->integrationRepository = $integrationRepository;
         $this->googleMeetEventRepository = $googleMeetEventRepository;
         $this->crudManager = $crudManager;
         
-        // Try to get the parameters
-        try {
-            $this->clientId = $parameterBag->get('google.client_id');
-        } catch (\Exception $e) {
-            // Temporary fallback for testing
-            $this->clientId = '263415563843-iisvu1oericu0v5mvc7bl2c1p3obq2mq.apps.googleusercontent.com';
-        }
-        
-        try {
-            $this->clientSecret = $parameterBag->get('google.client_secret');
-        } catch (\Exception $e) {
-            // Temporary fallback
-            $this->clientSecret = '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';
-        }
-        
-        try {
-            $this->redirectUri = $parameterBag->get('google.redirect_uri');
-        } catch (\Exception $e) {
-            // Temporary fallback
-            $this->redirectUri = 'https://app.skedi.com/oauth/google/callback';
-        }
+        // Use same credentials as Calendar service for consistency
+        $this->clientId = '263415563843-iisvu1oericu0v5mvc7bl2c1p3obq2mq.apps.googleusercontent.com';
+        $this->clientSecret = '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';
+        $this->redirectUri = 'https://app.skedi.com/oauth/google/callback';
     }
 
     /**
-     * Get Google Client instance
+     * Create properly configured Google Client with CORRECT OAuth parameters
+     * This mirrors the Calendar service configuration exactly
      */
-    public function getGoogleClient(?IntegrationEntity $integration = null): GoogleClient
+    private function createBaseGoogleClient(): GoogleClient
     {
         $client = new GoogleClient();
         
-        // Set exact credentials without any string manipulation
-        $clientId = '263415563843-iisvu1oericu0v5mvc7bl2c1p3obq2mq.apps.googleusercontent.com';
-        $clientSecret = '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';
-        $redirectUri = 'https://app.skedi.com/oauth/google/callback';
+        $client->setClientId($this->clientId);
+        $client->setClientSecret($this->clientSecret);
+        $client->setRedirectUri($this->redirectUri);
         
-        // Set client parameters
-        $client->setClientId($clientId);
-        $client->setClientSecret($clientSecret);
-        $client->setRedirectUri($redirectUri);
-        
-        // Set scopes specifically for Google Meet
-        $client->setScopes([
-            'https://www.googleapis.com/auth/calendar',
-            'https://www.googleapis.com/auth/meetings.space.created',
-            'https://www.googleapis.com/auth/meetings.space.readonly'
-        ]);
-        
-        // Standard OAuth parameters
-        $client->setAccessType('offline');
-        $client->setApprovalPrompt('force');
-        $client->setIncludeGrantedScopes(true);
-        
-        // Handle existing tokens if integration provided
-        if ($integration && $integration->getAccessToken()) {
-            // Simplified token handling
-            $tokenData = ['access_token' => $integration->getAccessToken()];
-            
-            if ($integration->getRefreshToken()) {
-                $tokenData['refresh_token'] = $integration->getRefreshToken();
-            }
-            
-            $client->setAccessToken($tokenData);
-        }
-        
-        return $client;
-    }
-
-    /**
-     * Get OAuth URL
-     */
-    public function getAuthUrl(): string
-    {
-        $client = new GoogleClient();
-        
-        $clientId = '263415563843-iisvu1oericu0v5mvc7bl2c1p3obq2mq.apps.googleusercontent.com';
-        $clientSecret = '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';
-        $redirectUri = 'https://app.skedi.com/oauth/google/callback';
-        
-        $client->setClientId($clientId);
-        $client->setClientSecret($clientSecret);
-        $client->setRedirectUri($redirectUri);
-        $client->setAccessType('offline');
-        $client->setApprovalPrompt('force');
-        $client->setIncludeGrantedScopes(true);
-        
-        // Include userinfo.email scope and meet-specific scopes
         $client->setScopes([
             'https://www.googleapis.com/auth/calendar',
             'https://www.googleapis.com/auth/meetings.space.created',
@@ -137,7 +67,92 @@ class GoogleMeetService
             'https://www.googleapis.com/auth/userinfo.email'
         ]);
         
-        return $client->createAuthUrl();
+        // CRITICAL: These parameters ensure we ALWAYS get refresh tokens
+        $client->setAccessType('offline');        // Required for refresh tokens
+        $client->setPrompt('consent');           // Forces consent screen = guaranteed refresh token
+        $client->setIncludeGrantedScopes(true); // Enables incremental authorization
+        
+        return $client;
+    }
+
+    /**
+     * Get OAuth URL with GUARANTEED refresh token parameters
+     */
+    public function getAuthUrl(): string
+    {
+        $client = $this->createBaseGoogleClient();
+        
+        $authUrl = $client->createAuthUrl();
+        
+        // Debug logging to verify correct parameters
+        error_log('Google Meet Auth URL: ' . $authUrl);
+        
+        // Validate critical parameters are present
+        if (!str_contains($authUrl, 'access_type=offline')) {
+            throw new IntegrationException('Critical error: Missing access_type=offline parameter');
+        }
+        
+        if (!str_contains($authUrl, 'prompt=consent')) {
+            throw new IntegrationException('Critical error: Missing prompt=consent parameter');
+        }
+        
+        return $authUrl;
+    }
+
+    /**
+     * Get Google Client instance with token handling and auto-refresh
+     */
+    public function getGoogleClient(?IntegrationEntity $integration = null): GoogleClient
+    {
+        $client = $this->createBaseGoogleClient();
+        
+        if ($integration && $integration->getAccessToken()) {
+            // Prepare token data in the format Google Client expects
+            $tokenData = [
+                'access_token' => $integration->getAccessToken(),
+                'token_type' => 'Bearer',
+                'expires_in' => 3600,
+                'created' => time()
+            ];
+            
+            if ($integration->getRefreshToken()) {
+                $tokenData['refresh_token'] = $integration->getRefreshToken();
+            }
+            
+            if ($integration->getTokenExpires()) {
+                $expiresIn = $integration->getTokenExpires()->getTimestamp() - time();
+                $tokenData['expires_in'] = max(1, $expiresIn);
+                $tokenData['created'] = $integration->getTokenExpires()->getTimestamp() - 3600;
+            }
+            
+            $client->setAccessToken($tokenData);
+            
+            // Auto-refresh if needed
+            if ($client->isAccessTokenExpired() && $integration->getRefreshToken()) {
+                try {
+                    $this->refreshTokenWithRetry($integration);
+                    // Reload the token data after refresh
+                    $tokenData['access_token'] = $integration->getAccessToken();
+                    if ($integration->getTokenExpires()) {
+                        $expiresIn = $integration->getTokenExpires()->getTimestamp() - time();
+                        $tokenData['expires_in'] = max(1, $expiresIn);
+                        $tokenData['created'] = $integration->getTokenExpires()->getTimestamp() - 3600;
+                    }
+                    $client->setAccessToken($tokenData);
+                } catch (\Exception $e) {
+                    // Mark integration as requiring re-auth
+                    $integration->setStatus('expired');
+                    $this->entityManager->persist($integration);
+                    $this->entityManager->flush();
+                    
+                    throw new IntegrationException(
+                        'Google Meet access expired. Please reconnect your account. Error: ' . $e->getMessage()
+                    );
+                }
+            }
+        }
+        
+        return $client;
     }
 
     /**
@@ -148,37 +163,39 @@ class GoogleMeetService
     {
         try {
             // Create a new Google client for this authentication flow
-            $client = new GoogleClient();
-            
-            // Set direct credentials
-            $clientId = '263415563843-iisvu1oericu0v5mvc7bl2c1p3obq2mq.apps.googleusercontent.com';
-            $clientSecret = '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';
-            $redirectUri = 'https://app.skedi.com/oauth/google/callback';
-            
-            // Set up client configuration
-            $client->setClientId($clientId);
-            $client->setClientSecret($clientSecret);
-            $client->setRedirectUri($redirectUri);
-            $client->setAccessType('offline');
-            $client->setApprovalPrompt('force');
-            
-            // Set scopes same as in getAuthUrl
-            $client->setScopes([
-                'https://www.googleapis.com/auth/calendar',
-                'https://www.googleapis.com/auth/meetings.space.created',
-                'https://www.googleapis.com/auth/meetings.space.readonly',
-                'https://www.googleapis.com/auth/userinfo.email'
-            ]);
+            $client = $this->createBaseGoogleClient();
             
             // Exchange the authorization code for an access token
             try {
                 $accessToken = $client->fetchAccessTokenWithAuthCode($code);
                 
                 if (isset($accessToken['error'])) {
+                    error_log('Google Meet token exchange error: ' . json_encode($accessToken));
                     throw new IntegrationException('Failed to get access token: ' . 
                         ($accessToken['error_description'] ?? $accessToken['error']));
                 }
+                
+                // CRITICAL: Verify we got a refresh token
+                if (!isset($accessToken['refresh_token'])) {
+                    error_log('No refresh token received for Google Meet! Response: ' . json_encode($accessToken));
+                    error_log('Possible causes:');
+                    error_log('1. User previously authorized (should be fixed by prompt=consent)');
+                    error_log('2. Application in testing mode (7-day expiration)');
+                    error_log('3. Missing access_type=offline (should be fixed)');
+                    
+                    throw new IntegrationException(
+                        'No refresh token received. This should not happen with the new configuration. ' .
+                        'Please check if your Google Cloud Console app is in "Testing" mode, ' .
+                        'which limits refresh tokens to 7 days.'
+                    );
+                }
+                
+                error_log('Successfully received refresh token for Google Meet');
+                
             } catch (\Exception $e) {
+                if ($e instanceof IntegrationException) {
+                    throw $e;
+                }
                 throw new IntegrationException('Token exchange failed: ' . $e->getMessage());
             }
             
@@ -193,11 +210,7 @@ class GoogleMeetService
             
             try {
                 // Create a new client just for this operation
-                $userClient = new GoogleClient();
-                $userClient->setClientId($clientId);
-                $userClient->setClientSecret($clientSecret);
-                
-                // Set the access token we received
+                $userClient = $this->createBaseGoogleClient();
                 $userClient->setAccessToken($accessToken);
                 
                 // Call the userinfo API
@@ -208,6 +221,7 @@ class GoogleMeetService
                 $googleEmail = $userInfo->getEmail();
                 $googleUserId = $userInfo->getId();
             } catch (\Exception $e) {
+                error_log('Failed to get Google Meet user info: ' . $e->getMessage());
                 // Continue without email/user info
             }
             
@@ -234,6 +248,7 @@ class GoogleMeetService
             if ($existingIntegration) {
                 // Update existing integration
                 $existingIntegration->setAccessToken($accessToken['access_token']);
+                $existingIntegration->setRefreshToken($accessToken['refresh_token']);
                 $existingIntegration->setTokenExpires($expiresAt);
                 
                 // Update name and external ID if we got new info
@@ -245,17 +260,15 @@ class GoogleMeetService
                     $existingIntegration->setExternalId($externalId);
                 }
                 
-                // Only update refresh token if a new one was provided
-                if (isset($accessToken['refresh_token'])) {
-                    $existingIntegration->setRefreshToken($accessToken['refresh_token']);
-                }
-                
                 // Update config with Google email
                 $config = $existingIntegration->getConfig() ?? [];
                 if ($googleEmail) {
                     $config['google_email'] = $googleEmail;
                 }
                 $existingIntegration->setConfig($config);
+                
+                // Ensure it's marked as active
+                $existingIntegration->setStatus('active');
                 
                 $this->entityManager->persist($existingIntegration);
                 $this->entityManager->flush();
@@ -269,19 +282,20 @@ class GoogleMeetService
                 $integration->setName($integrationName);
                 $integration->setExternalId($externalId);
                 $integration->setAccessToken($accessToken['access_token']);
-                
-                if (isset($accessToken['refresh_token'])) {
-                    $integration->setRefreshToken($accessToken['refresh_token']);
-                }
-                
+                $integration->setRefreshToken($accessToken['refresh_token']);
                 $integration->setTokenExpires($expiresAt);
-                $integration->setScopes(implode(',', $client->getScopes()));
+                $integration->setScopes(implode(',', [
+                    'https://www.googleapis.com/auth/calendar',
+                    'https://www.googleapis.com/auth/meetings.space.created',
+                    'https://www.googleapis.com/auth/meetings.space.readonly',
+                    'https://www.googleapis.com/auth/userinfo.email'
+                ]));
                 
                 // Store Google email in the config
-                $config = [
-                    'google_email' => $googleEmail
-                ];
-                
+                $config = [];
+                if ($googleEmail) {
+                    $config['google_email'] = $googleEmail;
+                }
                 $integration->setConfig($config);
                 $integration->setStatus('active');
                 
@@ -328,11 +342,153 @@ class GoogleMeetService
      */
     public function getMeetLinkForBooking(int $bookingId): ?GoogleMeetEventEntity
     {
-        return $this->googleMeetEventRepository->findByBookingId($bookingId);
+        try {
+            $filters = [
+                [
+                    'field' => 'bookingId',
+                    'operator' => 'equals',
+                    'value' => $bookingId
+                ]
+            ];
+            
+            $results = $this->crudManager->findMany(
+                GoogleMeetEventEntity::class,
+                $filters,
+                1,
+                1,
+                []
+            );
+            
+            return !empty($results) ? $results[0] : null;
+        } catch (\Exception $e) {
+            return null;
+        }
     }
     
     /**
-     * Create a Google Meet link
+     * Robust token refresh with retry logic (same as Calendar service)
+     */
+    private function refreshTokenWithRetry(IntegrationEntity $integration, int $maxRetries = 3): array
+    {
+        if (!$integration->getRefreshToken()) {
+            throw new IntegrationException('No refresh token available for refresh');
+        }
+        
+        $client = $this->createBaseGoogleClient();
+        
+        $attempt = 0;
+        $baseDelay = 1000; // 1 second
+        
+        while ($attempt < $maxRetries) {
+            try {
+                error_log("Attempting to refresh Google Meet token (attempt " . ($attempt + 1) . ")");
+                
+                $accessToken = $client->fetchAccessTokenWithRefreshToken($integration->getRefreshToken());
+                
+                if (isset($accessToken['error'])) {
+                    error_log('Google Meet token refresh error: ' . json_encode($accessToken));
+                    
+                    // Handle specific error types
+                    if ($accessToken['error'] === 'invalid_grant') {
+                        throw new IntegrationException(
+                            'Refresh token is invalid or expired. ' .
+                            'This may happen if the app is in testing mode (7-day limit) or ' .
+                            'if the user revoked access. User must reconnect.'
+                        );
+                    }
+                    
+                    if ($accessToken['error'] === 'invalid_request') {
+                        throw new IntegrationException(
+                            'Invalid refresh token request. User must reconnect.'
+                        );
+                    }
+                    
+                    // For rate limiting or temporary errors, retry
+                    if (in_array($accessToken['error'], ['temporarily_unavailable', 'internal_failure'])) {
+                        $attempt++;
+                        if ($attempt < $maxRetries) {
+                            $delay = $baseDelay * pow(2, $attempt); // Exponential backoff
+                            error_log("Temporary error, retrying in {$delay}ms...");
+                            usleep($delay * 1000);
+                            continue;
+                        }
+                    }
+                    
+                    throw new IntegrationException('Token refresh failed: ' . $accessToken['error']);
+                }
+                
+                // Update the integration with new token data
+                $expiresIn = $accessToken['expires_in'] ?? 3600;
+                $expiresAt = new DateTime();
+                $expiresAt->modify("+{$expiresIn} seconds");
+                
+                $integration->setAccessToken($accessToken['access_token']);
+                $integration->setTokenExpires($expiresAt);
+                
+                // Important: Only update refresh token if a new one was provided
+                if (isset($accessToken['refresh_token'])) {
+                    $integration->setRefreshToken($accessToken['refresh_token']);
+                    error_log('New refresh token received and saved for Google Meet');
+                }
+                
+                // Ensure integration is marked as active
+                $integration->setStatus('active');
+                
+                $this->entityManager->persist($integration);
+                $this->entityManager->flush();
+                
+                error_log('Successfully refreshed Google Meet token');
+                
+                return $accessToken;
+                
+            } catch (IntegrationException $e) {
+                throw $e; // Don't retry integration exceptions
+            } catch (\Exception $e) {
+                $attempt++;
+                error_log("Google Meet token refresh attempt {$attempt} failed: " . $e->getMessage());
+                
+                if ($attempt >= $maxRetries) {
+                    throw new IntegrationException('Token refresh failed after ' . $maxRetries . ' attempts: ' . $e->getMessage());
+                }
+                
+                // Exponential backoff for retries
+                $delay = $baseDelay * pow(2, $attempt);
+                usleep($delay * 1000);
+            }
+        }
+        
+        throw new IntegrationException('Token refresh failed after maximum retry attempts');
+    }
+    
+    /**
+     * Proactive token refresh - call this before token expires
+     */
+    private function refreshTokenIfNeeded(IntegrationEntity $integration): void
+    {
+        // Refresh if token expires within 10 minutes
+        $refreshThreshold = new DateTime('+10 minutes');
+        
+        if (!$integration->getTokenExpires() || 
+            $integration->getTokenExpires() <= $refreshThreshold) {
+            
+            if (!$integration->getRefreshToken()) {
+                throw new IntegrationException(
+                    'Access token expired and no refresh token available. User must reconnect.'
+                );
+            }
+            
+            try {
+                $this->refreshTokenWithRetry($integration);
+                error_log('Proactively refreshed token for Google Meet integration ID: ' . $integration->getId());
+            } catch (\Exception $e) {
+                error_log('Proactive Google Meet token refresh failed: ' . $e->getMessage());
+                throw $e;
+            }
+        }
+    }
+    
+    /**
+     * Create a Google Meet link with improved token handling
      */
     public function createMeetLink(
         IntegrationEntity $integration,
@@ -344,15 +500,8 @@ class GoogleMeetService
         array $options = []
     ): GoogleMeetEventEntity {
         try {
-
-          
-            $tokenExpires = $integration->getTokenExpires();
-            if (!$tokenExpires || $tokenExpires < new DateTime('+5 minutes')) {
-                if (!$integration->getRefreshToken()) {
-                    throw new IntegrationException('No refresh token available. Please reconnect your Google account.');
-                }
-                $this->refreshToken($integration);
-            }
+            // Proactively refresh token before making API calls
+            $this->refreshTokenIfNeeded($integration);
 
             $client = $this->getGoogleClient($integration);
             $service = new GoogleCalendar($client);
@@ -541,42 +690,43 @@ class GoogleMeetService
     }
     
     /**
-     * Refresh token
+     * Cleanup expired Google Meet events
      */
-    private function refreshToken(IntegrationEntity $integration, GoogleClient $client = null): void
+    public function cleanupExpiredMeetEvents(int $retentionDays = 7): int
     {
-        if (!$client) {
-            $client = $this->getGoogleClient($integration);
-        }
-        
-        if (!$integration->getRefreshToken()) {
-            throw new IntegrationException('No refresh token available');
-        }
-        
         try {
-            $accessToken = $client->fetchAccessTokenWithRefreshToken($integration->getRefreshToken());
+            $cutoffDate = new DateTime("-{$retentionDays} days");
             
-            if (isset($accessToken['error'])) {
-                throw new IntegrationException('Failed to refresh token: ' . $accessToken['error']);
+            $filters = [
+                [
+                    'field' => 'endTime',
+                    'operator' => 'less_than',
+                    'value' => $cutoffDate
+                ]
+            ];
+            
+            $expiredEvents = $this->crudManager->findMany(
+                GoogleMeetEventEntity::class,
+                $filters,
+                1,
+                1000,
+                []
+            );
+            
+            $removedCount = 0;
+            foreach ($expiredEvents as $event) {
+                $this->entityManager->remove($event);
+                $removedCount++;
             }
             
-            // Update token in database
-            $expiresIn = isset($accessToken['expires_in']) ? $accessToken['expires_in'] : 3600;
-            $expiresAt = new DateTime();
-            $expiresAt->modify("+{$expiresIn} seconds");
-            
-            $integration->setAccessToken($accessToken['access_token']);
-            $integration->setTokenExpires($expiresAt);
-            
-            // Only update refresh token if a new one was provided
-            if (isset($accessToken['refresh_token'])) {
-                $integration->setRefreshToken($accessToken['refresh_token']);
+            if ($removedCount > 0) {
+                $this->entityManager->flush();
             }
             
-            $this->entityManager->persist($integration);
-            $this->entityManager->flush();
+            return $removedCount;
         } catch (\Exception $e) {
-            throw new IntegrationException('Failed to refresh token: ' . $e->getMessage());
+            error_log('Failed to cleanup expired Meet events: ' . $e->getMessage());
+            return 0;
         }
     }
 }

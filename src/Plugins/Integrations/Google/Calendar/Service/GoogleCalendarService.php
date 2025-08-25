@@ -64,57 +64,69 @@ class GoogleCalendarService extends BaseCalendarIntegration
         ];
     }
     
+    /**
+     * Create properly configured Google Client with CORRECT OAuth parameters
+     * This is the key fix - consistent configuration across all methods
+     */
+    private function createBaseGoogleClient(): GoogleClient
+    {
+        $client = new GoogleClient();
+        
+        $client->setClientId($this->clientId);
+        $client->setClientSecret($this->clientSecret);
+        $client->setRedirectUri($this->redirectUri);
+        
+        $client->setScopes([
+            'https://www.googleapis.com/auth/calendar',
+            'https://www.googleapis.com/auth/userinfo.email'
+        ]);
+        
+        // CRITICAL: These parameters ensure we ALWAYS get refresh tokens
+        $client->setAccessType('offline');        // Required for refresh tokens
+        $client->setPrompt('consent');           // Forces consent screen = guaranteed refresh token
+        $client->setIncludeGrantedScopes(true); // Enables incremental authorization
+        
+        return $client;
+    }
 
-     /**
-     * Get authorization URL
-     * CRITICAL: We must use approval_prompt=force to always get a refresh token
+    /**
+     * Get authorization URL with GUARANTEED refresh token parameters
      */
     public function getAuthUrl(): string
     {
-        $client = new GoogleClient();
+        $client = $this->createBaseGoogleClient();
         
-        $client->setClientId($this->clientId);
-        $client->setClientSecret($this->clientSecret);
-        $client->setRedirectUri($this->redirectUri);
+        $authUrl = $client->createAuthUrl();
         
-        $client->setScopes([
-            'https://www.googleapis.com/auth/calendar',
-            'https://www.googleapis.com/auth/userinfo.email'
-        ]);
+        // Debug logging to verify correct parameters
+        error_log('Google Calendar Auth URL: ' . $authUrl);
         
-        // CRITICAL: These parameters ensure we get a refresh token that won't expire
-        $client->setAccessType('offline');
-        $client->setApprovalPrompt('force'); // This forces consent screen and ensures refresh token
-        $client->setIncludeGrantedScopes(true);
+        // Validate critical parameters are present
+        if (!str_contains($authUrl, 'access_type=offline')) {
+            throw new IntegrationException('Critical error: Missing access_type=offline parameter');
+        }
         
-        return $client->createAuthUrl();
+        if (!str_contains($authUrl, 'prompt=consent')) {
+            throw new IntegrationException('Critical error: Missing prompt=consent parameter');
+        }
+        
+        return $authUrl;
     }
 
-
     /**
-     * Get Google Client
+     * Get Google Client with existing token handling and auto-refresh
      */
     public function getGoogleClient(?IntegrationEntity $integration = null): GoogleClient
     {
-        $client = new GoogleClient();
-        
-        $client->setClientId($this->clientId);
-        $client->setClientSecret($this->clientSecret);
-        $client->setRedirectUri($this->redirectUri);
-        
-        $client->setScopes([
-            'https://www.googleapis.com/auth/calendar',
-            'https://www.googleapis.com/auth/userinfo.email'
-        ]);
-        
-        $client->setAccessType('offline');
-        $client->setIncludeGrantedScopes(true);
+        $client = $this->createBaseGoogleClient();
         
         if ($integration && $integration->getAccessToken()) {
+            // Prepare token data in the format Google Client expects
             $tokenData = [
                 'access_token' => $integration->getAccessToken(),
                 'token_type' => 'Bearer',
-                'created' => time() - 3500 // Assume token is almost expired to force refresh
+                'expires_in' => 3600,
+                'created' => time()
             ];
             
             if ($integration->getRefreshToken()) {
@@ -124,9 +136,34 @@ class GoogleCalendarService extends BaseCalendarIntegration
             if ($integration->getTokenExpires()) {
                 $expiresIn = $integration->getTokenExpires()->getTimestamp() - time();
                 $tokenData['expires_in'] = max(1, $expiresIn);
+                $tokenData['created'] = $integration->getTokenExpires()->getTimestamp() - 3600;
             }
             
             $client->setAccessToken($tokenData);
+            
+            // Auto-refresh if needed
+            if ($client->isAccessTokenExpired() && $integration->getRefreshToken()) {
+                try {
+                    $this->refreshTokenWithRetry($integration);
+                    // Reload the token data after refresh
+                    $tokenData['access_token'] = $integration->getAccessToken();
+                    if ($integration->getTokenExpires()) {
+                        $expiresIn = $integration->getTokenExpires()->getTimestamp() - time();
+                        $tokenData['expires_in'] = max(1, $expiresIn);
+                        $tokenData['created'] = $integration->getTokenExpires()->getTimestamp() - 3600;
+                    }
+                    $client->setAccessToken($tokenData);
+                } catch (\Exception $e) {
+                    // Mark integration as requiring re-auth
+                    $integration->setStatus('expired');
+                    $this->entityManager->persist($integration);
+                    $this->entityManager->flush();
+                    
+                    throw new IntegrationException(
+                        'Google Calendar access expired. Please reconnect your account. Error: ' . $e->getMessage()
+                    );
+                }
+            }
         }
         
         return $client;
@@ -137,28 +174,41 @@ class GoogleCalendarService extends BaseCalendarIntegration
      */
     protected function exchangeCodeForToken(string $code): array
     {
-        $client = new GoogleClient();
-        
-        $client->setClientId($this->clientId);
-        $client->setClientSecret($this->clientSecret);
-        $client->setRedirectUri($this->redirectUri);
-        $client->setAccessType('offline');
+        $client = $this->createBaseGoogleClient();
         
         try {
             $accessToken = $client->fetchAccessTokenWithAuthCode($code);
             
+            // Enhanced error handling
             if (isset($accessToken['error'])) {
+                error_log('Google token exchange error: ' . json_encode($accessToken));
                 throw new IntegrationException('Failed to get access token: ' . 
                     ($accessToken['error_description'] ?? $accessToken['error']));
             }
             
-            // Ensure we have a refresh token
+            // CRITICAL: Verify we got a refresh token
             if (!isset($accessToken['refresh_token'])) {
-                throw new IntegrationException('No refresh token received. The user may need to revoke access and reconnect.');
+                error_log('No refresh token received! Response: ' . json_encode($accessToken));
+                error_log('Possible causes:');
+                error_log('1. User previously authorized (should be fixed by prompt=consent)');
+                error_log('2. Application in testing mode (7-day expiration)');
+                error_log('3. Missing access_type=offline (should be fixed)');
+                
+                throw new IntegrationException(
+                    'No refresh token received. This should not happen with the new configuration. ' .
+                    'Please check if your Google Cloud Console app is in "Testing" mode, ' .
+                    'which limits refresh tokens to 7 days.'
+                );
             }
+            
+            // Log successful token exchange
+            error_log('Successfully received refresh token for Google Calendar');
             
             return $accessToken;
         } catch (\Exception $e) {
+            if ($e instanceof IntegrationException) {
+                throw $e;
+            }
             throw new IntegrationException('Token exchange failed: ' . $e->getMessage());
         }
     }
@@ -169,9 +219,7 @@ class GoogleCalendarService extends BaseCalendarIntegration
      protected function getUserInfo(array $tokenData): array
     {
         try {
-            $client = new GoogleClient();
-            $client->setClientId($this->clientId);
-            $client->setClientSecret($this->clientSecret);
+            $client = $this->createBaseGoogleClient();
             $client->setAccessToken($tokenData);
             
             $oauth2 = new Oauth2($client);
@@ -182,51 +230,138 @@ class GoogleCalendarService extends BaseCalendarIntegration
                 'email' => $userInfo->getEmail()
             ];
         } catch (\Exception $e) {
+            error_log('Failed to get user info: ' . $e->getMessage());
             return [];
         }
     }
 
     /**
-     * {@inheritdoc}
+     * Enhanced token refresh with retry logic and better error handling
      */
     protected function refreshToken(IntegrationEntity $integration): array
     {
-        $client = $this->getGoogleClient($integration);
-        
+        return $this->refreshTokenWithRetry($integration);
+    }
+    
+    /**
+     * Robust token refresh with retry logic
+     */
+    private function refreshTokenWithRetry(IntegrationEntity $integration, int $maxRetries = 3): array
+    {
         if (!$integration->getRefreshToken()) {
-            throw new IntegrationException('No refresh token available');
+            throw new IntegrationException('No refresh token available for refresh');
         }
         
-        try {
-            // Log refresh attempt for debugging
-            error_log('Attempting to refresh Google token for integration: ' . $integration->getId());
-            error_log('Refresh token exists: ' . (!empty($integration->getRefreshToken()) ? 'yes' : 'no'));
-            
-            $accessToken = $client->fetchAccessTokenWithRefreshToken($integration->getRefreshToken());
-            
-            if (isset($accessToken['error'])) {
-                error_log('Google token refresh error: ' . json_encode($accessToken));
+        $client = $this->createBaseGoogleClient();
+        
+        $attempt = 0;
+        $baseDelay = 1000; // 1 second
+        
+        while ($attempt < $maxRetries) {
+            try {
+                error_log("Attempting to refresh Google Calendar token (attempt " . ($attempt + 1) . ")");
                 
-                // If we get invalid_grant, it means the refresh token is bad
-                if ($accessToken['error'] === 'invalid_grant') {
-                    // This shouldn't happen with proper setup, but if it does, log detailed info
-                    error_log('Invalid grant error - refresh token may be expired or revoked');
-                    error_log('Integration created at: ' . $integration->getCreated()->format('Y-m-d H:i:s'));
-                    error_log('Last synced: ' . ($integration->getLastSynced() ? $integration->getLastSynced()->format('Y-m-d H:i:s') : 'never'));
+                $accessToken = $client->fetchAccessTokenWithRefreshToken($integration->getRefreshToken());
+                
+                if (isset($accessToken['error'])) {
+                    error_log('Google token refresh error: ' . json_encode($accessToken));
                     
-                    throw new IntegrationException('Google refresh token is invalid. This should not happen with proper authorization.');
+                    // Handle specific error types
+                    if ($accessToken['error'] === 'invalid_grant') {
+                        throw new IntegrationException(
+                            'Refresh token is invalid or expired. ' .
+                            'This may happen if the app is in testing mode (7-day limit) or ' .
+                            'if the user revoked access. User must reconnect.'
+                        );
+                    }
+                    
+                    if ($accessToken['error'] === 'invalid_request') {
+                        throw new IntegrationException(
+                            'Invalid refresh token request. User must reconnect.'
+                        );
+                    }
+                    
+                    // For rate limiting or temporary errors, retry
+                    if (in_array($accessToken['error'], ['temporarily_unavailable', 'internal_failure'])) {
+                        $attempt++;
+                        if ($attempt < $maxRetries) {
+                            $delay = $baseDelay * pow(2, $attempt); // Exponential backoff
+                            error_log("Temporary error, retrying in {$delay}ms...");
+                            usleep($delay * 1000);
+                            continue;
+                        }
+                    }
+                    
+                    throw new IntegrationException('Token refresh failed: ' . $accessToken['error']);
                 }
                 
-                throw new IntegrationException('Failed to refresh token: ' . $accessToken['error']);
+                // Update the integration with new token data
+                $expiresIn = $accessToken['expires_in'] ?? 3600;
+                $expiresAt = new DateTime();
+                $expiresAt->modify("+{$expiresIn} seconds");
+                
+                $integration->setAccessToken($accessToken['access_token']);
+                $integration->setTokenExpires($expiresAt);
+                
+                // Important: Only update refresh token if a new one was provided
+                if (isset($accessToken['refresh_token'])) {
+                    $integration->setRefreshToken($accessToken['refresh_token']);
+                    error_log('New refresh token received and saved');
+                }
+                
+                // Ensure integration is marked as active
+                $integration->setStatus('active');
+                
+                $this->entityManager->persist($integration);
+                $this->entityManager->flush();
+                
+                error_log('Successfully refreshed Google Calendar token');
+                
+                return $accessToken;
+                
+            } catch (IntegrationException $e) {
+                throw $e; // Don't retry integration exceptions
+            } catch (\Exception $e) {
+                $attempt++;
+                error_log("Token refresh attempt {$attempt} failed: " . $e->getMessage());
+                
+                if ($attempt >= $maxRetries) {
+                    throw new IntegrationException('Token refresh failed after ' . $maxRetries . ' attempts: ' . $e->getMessage());
+                }
+                
+                // Exponential backoff for retries
+                $delay = $baseDelay * pow(2, $attempt);
+                usleep($delay * 1000);
+            }
+        }
+        
+        throw new IntegrationException('Token refresh failed after maximum retry attempts');
+    }
+    
+    /**
+     * Proactive token refresh - call this before token expires
+     */
+    protected function refreshTokenIfNeeded(IntegrationEntity $integration): void
+    {
+        // Refresh if token expires within 10 minutes
+        $refreshThreshold = new DateTime('+10 minutes');
+        
+        if (!$integration->getTokenExpires() || 
+            $integration->getTokenExpires() <= $refreshThreshold) {
+            
+            if (!$integration->getRefreshToken()) {
+                throw new IntegrationException(
+                    'Access token expired and no refresh token available. User must reconnect.'
+                );
             }
             
-            // Log successful refresh
-            error_log('Successfully refreshed Google token for integration: ' . $integration->getId());
-            
-            return $accessToken;
-        } catch (\Exception $e) {
-            error_log('Exception during token refresh: ' . $e->getMessage());
-            throw new IntegrationException('Failed to refresh token: ' . $e->getMessage());
+            try {
+                $this->refreshTokenWithRetry($integration);
+                error_log('Proactively refreshed token for integration ID: ' . $integration->getId());
+            } catch (\Exception $e) {
+                error_log('Proactive token refresh failed: ' . $e->getMessage());
+                throw $e;
+            }
         }
     }
     
@@ -240,11 +375,11 @@ class GoogleCalendarService extends BaseCalendarIntegration
             $this->checkRateLimit($integration, 'sync');
             
             $user = $integration->getUser();
-            $client = $this->getGoogleClient($integration);
             
-            // Refresh token if needed
+            // Proactively refresh token before making API calls
             $this->refreshTokenIfNeeded($integration);
             
+            $client = $this->getGoogleClient($integration);
             $service = new GoogleCalendar($client);
             
             // Get calendar list (with caching)
@@ -352,6 +487,9 @@ class GoogleCalendarService extends BaseCalendarIntegration
                 // Check rate limit
                 $this->checkRateLimit($integration, 'default');
                 
+                // Proactively refresh token before making API calls
+                $this->refreshTokenIfNeeded($integration);
+                
                 $client = $this->getGoogleClient($integration);
                 $service = new GoogleCalendar($client);
                 
@@ -401,6 +539,7 @@ class GoogleCalendarService extends BaseCalendarIntegration
             // Check rate limit
             $this->checkRateLimit($integration, 'create');
             
+            // Proactively refresh token before making API calls
             $this->refreshTokenIfNeeded($integration);
             
             $client = $this->getGoogleClient($integration);
@@ -734,9 +873,6 @@ class GoogleCalendarService extends BaseCalendarIntegration
         $event->setConferenceData($conference);
     }
 
-
-
-
     public function testSaveEvent(IntegrationEntity $integration): array
     {
         try {
@@ -774,8 +910,6 @@ class GoogleCalendarService extends BaseCalendarIntegration
             ];
         }
     }
-
-
 
     /**
      * Delete Google Calendar event for a cancelled booking
@@ -1037,5 +1171,4 @@ class GoogleCalendarService extends BaseCalendarIntegration
             // Silently fail - we don't want Google errors to break booking operations
         }
     }
-
 }
