@@ -36,7 +36,6 @@ class StripeWebhookService
         if ($data !== null) {
             $entry .= " - " . json_encode($data);
         }
-        file_put_contents($this->logFile, $entry . "\n", FILE_APPEND);
     }
 
     public function handleWebhook(string $payload, ?string $signature): void

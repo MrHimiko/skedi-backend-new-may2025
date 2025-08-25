@@ -129,7 +129,7 @@ class FormService
         try {
             $form = new FormEntity();
             $form->setCreatedBy($user);
-            
+
             // Set organization if provided
             if (!empty($data['organization_id'])) {
                 $organization = $this->crudManager->findOne(
@@ -144,11 +144,11 @@ class FormService
 
             // Always generate slug from name
             if (isset($data['name'])) {
-                $data['slug'] = $this->slugService->generateSlug($data['name']);
+                $data['slug'] = $this->generateUniqueSlug($data['name']);
             } else {
                 throw new FormsException('Form name is required.');
             }
-            
+
             // Initialize with default fields if no fields provided
             if (!isset($data['fields']) || empty($data['fields'])) {
                 $data['fields'] = $form->getDefaultFields();
@@ -161,45 +161,47 @@ class FormService
             $constraints = [
                 'name' => [
                     new Assert\NotBlank(['message' => 'Form name is required.']),
-                    new Assert\Length(['max' => 255])
+                    new Assert\Type('string'),
+                    new Assert\Length(['min' => 1, 'max' => 255]),
                 ],
                 'slug' => [
                     new Assert\NotBlank(['message' => 'Form slug is required.']),
-                    new Assert\Length(['max' => 255])
+                    new Assert\Type('string'),
+                    new Assert\Length(['max' => 255]),
                 ],
-                'description' => [
-                    new Assert\Length(['max' => 65535])
-                ],
+                'description' => new Assert\Optional([
+                    new Assert\Type('string'),
+                    new Assert\Length(['max' => 65535]),
+                ]),
                 'fields' => [
-                    new Assert\NotBlank(['message' => 'Form fields are required.']),
-                    new Assert\Type('array')
+                    new Assert\Type('array'),
                 ],
-                'settings' => [
-                    new Assert\Type('array')
-                ],
-                'is_active' => [
-                    new Assert\Type('bool')
-                ],
-                'allow_multiple_submissions' => [
-                    new Assert\Type('bool')
-                ],
-                'requires_authentication' => [
-                    new Assert\Type('bool')
-                ],
-                'organization_id' => [
-                    new Assert\NotBlank(['message' => 'Organization ID is required.']),
+                'settings' => new Assert\Optional([
+                    new Assert\Type('array'),
+                ]),
+                'is_active' => new Assert\Optional([
+                    new Assert\Type('bool'),
+                ]),
+                'allow_multiple_submissions' => new Assert\Optional([
+                    new Assert\Type('bool'),
+                ]),
+                'requires_authentication' => new Assert\Optional([
+                    new Assert\Type('bool'),
+                ]),
+                'organization_id' => new Assert\Optional([
+                    new Assert\NotBlank(),
                     new Assert\Type('integer'),
-                    new Assert\Positive(['message' => 'Organization ID must be a positive number.'])
-                ]
+                    new Assert\Positive(['message' => 'Organization ID must be a positive number.']),
+                ]),
             ];
 
             $transform = [
-                'fields' => function($value) use (&$form) {
+                'fields' => function ($value) use (&$form) {
                     $fieldsArray = is_array($value) ? $value : [];
                     $form->setFieldsJson($fieldsArray);
                     return $fieldsArray;
                 },
-                'settings' => function($value) use (&$form) {
+                'settings' => function ($value) use (&$form) {
                     $settingsArray = is_array($value) ? $value : [];
                     $form->setSettingsJson($settingsArray);
                     return $settingsArray;
@@ -216,75 +218,74 @@ class FormService
 
     public function update(FormEntity $form, array $data): void
     {
-    try {
-        // Auto-generate slug from name if name is being updated
-        if (isset($data['name']) && !isset($data['slug'])) {
-            $data['slug'] = $this->slugService->generateSlug($data['name']);
-        }
-        
-        // Handle organization_id separately
-        if (isset($data['organization_id'])) {
-            $organization = $this->crudManager->findOne(
-                'App\Plugins\Organizations\Entity\OrganizationEntity',
-                $data['organization_id']
-            );
-            if (!$organization) {
-                throw new FormsException('Organization not found.');
+        try {
+            // Auto-generate slug from name if name is being updated
+            if (isset($data['name']) && !isset($data['slug'])) {
+                $data['slug'] = $this->generateUniqueSlugForUpdate($form, $data['name']);
             }
-            $form->setOrganization($organization);
-            // Remove from data to avoid validation issues
-            unset($data['organization_id']);
-        }
-        
-        // Manually set the fields and persist directly
-        if (isset($data['fields'])) {
-            $form->setFieldsJson($data['fields']);
-            $this->entityManager->persist($form);
-            $this->entityManager->flush();
-        }
-        
-        // Also handle settings manually if present
-        if (isset($data['settings'])) {
-            $form->setSettingsJson($data['settings']);
-            $this->entityManager->persist($form);
-            $this->entityManager->flush();
-        }
-        
-        // Remove fields and settings from data since we handled them manually
-        unset($data['fields']);
-        unset($data['settings']);
-        
-        // Only update other properties through CrudManager if there are any left
-        if (!empty($data)) {
-            $constraints = [
-                'name' => [
-                    new Assert\Length(['max' => 255])
-                ],
-                'slug' => [
-                    new Assert\Length(['max' => 255])
-                ],
-                'description' => [
-                    new Assert\Length(['max' => 65535])
-                ],
-                'is_active' => [
-                    new Assert\Type('bool')
-                ],
-                'allow_multiple_submissions' => [
-                    new Assert\Type('bool')
-                ],
-                'requires_authentication' => [
-                    new Assert\Type('bool')
-                ]
-            ];
+            
+            // Handle organization_id separately
+            if (isset($data['organization_id'])) {
+                $organization = $this->crudManager->findOne(
+                    'App\Plugins\Organizations\Entity\OrganizationEntity',
+                    $data['organization_id']
+                );
+                if (!$organization) {
+                    throw new FormsException('Organization not found.');
+                }
+                $form->setOrganization($organization);
+                // Remove from data to avoid validation issues
+                unset($data['organization_id']);
+            }
+            
+            // Manually set the fields and persist directly
+            if (isset($data['fields'])) {
+                $form->setFieldsJson($data['fields']);
+                $this->entityManager->persist($form);
+                $this->entityManager->flush();
+            }
+            
+            // Also handle settings manually if present
+            if (isset($data['settings'])) {
+                $form->setSettingsJson($data['settings']);
+                $this->entityManager->persist($form);
+                $this->entityManager->flush();
+            }
+            
+            // Remove fields and settings from data since we handled them manually
+            unset($data['fields']);
+            unset($data['settings']);
+            
+            // Only update other properties through CrudManager if there are any left
+            if (!empty($data)) {
+                $constraints = [
+                    'name' => [
+                        new Assert\Length(['max' => 255])
+                    ],
+                    'slug' => [
+                        new Assert\Length(['max' => 255])
+                    ],
+                    'description' => [
+                        new Assert\Length(['max' => 65535])
+                    ],
+                    'is_active' => [
+                        new Assert\Type('bool')
+                    ],
+                    'allow_multiple_submissions' => [
+                        new Assert\Type('bool')
+                    ],
+                    'requires_authentication' => [
+                        new Assert\Type('bool')
+                    ]
+                ];
 
-            $this->crudManager->update($form, $data, $constraints);
+                $this->crudManager->update($form, $data, $constraints);
+            }
+            
+        } catch (CrudException $e) {
+            throw new FormsException($e->getMessage());
         }
-        
-    } catch (CrudException $e) {
-        throw new FormsException($e->getMessage());
     }
-    }
-
 
     public function delete(FormEntity $form, bool $hard = false): void
     {
@@ -293,6 +294,40 @@ class FormService
         } catch (CrudException $e) {
             throw new FormsException($e->getMessage());
         }
+    }
+
+    /**
+     * Generate a unique slug by adding numbers if duplicates exist
+     */
+    private function generateUniqueSlug(string $name): string
+    {
+        $baseSlug = $this->slugService->generateSlug($name);
+        $slug = $baseSlug;
+        $counter = 1;
+        
+        // Keep trying until we find a unique slug
+        while ($this->getBySlug($slug)) {
+            $slug = $baseSlug . '-' . $counter;
+            $counter++;
+        }
+        
+        return $slug;
+    }
+
+    /**
+     * Generate a unique slug for updates, reusing existing generateUniqueSlug logic
+     */
+    private function generateUniqueSlugForUpdate(FormEntity $currentForm, string $name): string
+    {
+        $baseSlug = $this->slugService->generateSlug($name);
+        
+        // If the current form already has this slug, keep it
+        if ($currentForm->getSlug() === $baseSlug) {
+            return $baseSlug;
+        }
+        
+        // Otherwise, use the standard unique slug generation
+        return $this->generateUniqueSlug($name);
     }
 
     public function attachToEvent(FormEntity $form, EventEntity $event): EventFormEntity
