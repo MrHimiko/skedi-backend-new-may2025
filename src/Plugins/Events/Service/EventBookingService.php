@@ -121,8 +121,12 @@ class EventBookingService
             $booking->setEvent($event);
             $booking->setStartTime($startTime);
             $booking->setEndTime($endTime);
-            $booking->setStatus('confirmed');
-            
+            if ($event->isAcceptanceRequired()) {
+                $booking->setStatus('pending');
+            } else {
+                $booking->setStatus('confirmed');
+            }
+                        
             // Parse form_data if it's a string
             if (!empty($data['form_data'])) {
                 $formDataArray = is_string($data['form_data']) ? json_decode($data['form_data'], true) : $data['form_data'];
