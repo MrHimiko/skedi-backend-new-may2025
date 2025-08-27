@@ -7,6 +7,14 @@ class MeetingScheduledTemplate
 {
     public static function render(array $data): string
     {
+        // ✅ DEBUG: Log exactly what data the template receives  
+        error_log('🔍 GUEST TEMPLATE DEBUG: ' . json_encode([
+            'meeting_status' => $data['meeting_status'] ?? 'NOT_SET',
+            'booking_id' => $data['booking_id'] ?? 'NOT_SET',
+            'organization_id' => $data['organization_id'] ?? 'NOT_SET',
+            'all_keys' => array_keys($data)
+        ], JSON_PRETTY_PRINT));
+        
         // Extract variables with defaults
         $guestName = $data['guest_name'] ?? 'Guest';
         $meetingName = $data['meeting_name'] ?? 'Meeting';
@@ -15,30 +23,35 @@ class MeetingScheduledTemplate
         $meetingDuration = $data['meeting_duration'] ?? $data['duration'] ?? '30 minutes';
         $meetingLocation = $data['meeting_location'] ?? $data['location'] ?? 'Online';
         $meetingLink = $data['meeting_link'] ?? '';
-        $organizerName = $data['organizer_name'] ?? 'Host';
+        $organizerName = $data['host_name'] ?? 'Host';
         $companyName = $data['company_name'] ?? '';
         $rescheduleLink = $data['reschedule_link'] ?? '#';
         $calendarLink = $data['calendar_link'] ?? $rescheduleLink;
         
-        // ✅ NEW: Check if booking is pending approval
+        // ✅ KEY: Check if booking is pending approval
         $meetingStatus = $data['meeting_status'] ?? 'confirmed';
+        
+        // ✅ DEBUG: Log what status we're using
+        error_log('🔍 GUEST TEMPLATE STATUS CHECK: meetingStatus=' . $meetingStatus);
         
         $html = '<!DOCTYPE html>
 <html>
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Meeting Scheduled</title>'
+    <title>Meeting Notification</title>'
     . EmailStyles::getStyles() . 
 '</head>
 <body>
     <div class="container">';
 
-        // ✅ Different header based on status
+        // ✅ CRITICAL: Different header based on status
         if ($meetingStatus === 'pending') {
-            $html .= EmailStyles::getHeader('Booking Request Sent!', '⏳');
+            $html .= EmailStyles::getHeader('⏳ Booking Request Sent!', '⏳');
+            error_log('🔍 GUEST TEMPLATE: Using PENDING header');
         } else {
-            $html .= EmailStyles::getHeader('Meeting Scheduled!', '🗓️');
+            $html .= EmailStyles::getHeader('🗓️ Meeting Scheduled!', '🗓️');
+            error_log('🔍 GUEST TEMPLATE: Using CONFIRMED header');
         }
 
         $html .= '<div class="content">
@@ -52,7 +65,7 @@ class MeetingScheduledTemplate
             $html .= ' from <strong>' . $companyName . '</strong>';
         }
         
-        // ✅ Different message based on status
+        // ✅ CRITICAL: Different message based on status
         if ($meetingStatus === 'pending') {
             $html .= ' is pending approval.</p>
             
@@ -60,6 +73,8 @@ class MeetingScheduledTemplate
                 <strong>⏳ Awaiting Approval</strong><br>
                 Your booking request has been sent to ' . $organizerName . '. You\'ll receive a confirmation email once approved.
             </div>';
+            
+            error_log('🔍 GUEST TEMPLATE: Using PENDING message content');
         } else {
             $html .= ' has been successfully scheduled.</p>
             
@@ -67,6 +82,8 @@ class MeetingScheduledTemplate
                 <strong>✓ Meeting confirmed</strong><br>
                 We\'ve sent calendar invitations to all participants.
             </div>';
+            
+            error_log('🔍 GUEST TEMPLATE: Using CONFIRMED message content');
         }
         
         $html .= '
@@ -86,6 +103,12 @@ class MeetingScheduledTemplate
                 <div class="detail-row">
                     <strong>Location:</strong> ' . $meetingLocation . '
                 </div>';
+        
+        // ✅ DEBUG FIELDS - Remove these after testing
+        $html .= '
+                <div class="detail-row" style="background: #ffe6e6; padding: 10px; border: 1px solid #ff0000;">
+                    <strong>🔍 DEBUG - Status:</strong> ' . $meetingStatus . '
+                </div>';
                 
         // Add meeting link if provided
         if ($meetingLink) {
@@ -98,7 +121,7 @@ class MeetingScheduledTemplate
         $html .= '
             </div>';
         
-        // ✅ Different action buttons based on status
+        // ✅ CRITICAL: Different action buttons based on status
         if ($meetingStatus === 'pending') {
             $html .= '
             <div class="center">

@@ -53,12 +53,12 @@ class EventBookingController extends AbstractController
         $this->userOrganizationService = $userOrganizationService;
         $this->entityManager = $entityManager;
         $this->emailService = $emailService;
-        $this->reminderService = $reminderService;
         $this->assigneeService = $assigneeService;
+        $this->reminderService = $reminderService;
         $this->formService = $formService;
     }
 
-    #[Route('/events/{event_id}/bookings', name: 'event_bookings_get_many#', methods: ['GET'], requirements: ['event_id' => '\d+'])]
+    #[Route('/events/{event_id}/bookings', name: 'event_bookings_get_many', methods: ['GET'], requirements: ['event_id' => '\d+'])]
     public function getBookings(int $organization_id, int $event_id, Request $request): JsonResponse
     {
         $user = $request->attributes->get('user');
@@ -76,64 +76,20 @@ class EventBookingController extends AbstractController
             if (!$event = $this->eventService->getEventByIdAndOrganization($event_id, $organization->entity)) {
                 return $this->responseService->json(false, 'Event was not found.');
             }
+
+            // Add event filter to only get bookings for this event
+            $filters['event'] = $event;
             
-            // Get bookings for this event
-            $bookings = $this->bookingService->getBookingsByEvent($event, $filters);
-            
-            $result = [];
-            foreach ($bookings as $booking) {
-                $bookingData = $booking->toArray();
-                
-                // Add guests
-                $guests = $this->bookingService->getGuests($booking);
-                $bookingData['guests'] = array_map(function($guest) {
-                    return $guest->toArray();
-                }, $guests);
-                
-                $result[] = $bookingData;
-            }
+            $result = $this->bookingService->getMany($filters, $page, $limit);
             
             return $this->responseService->json(true, 'Bookings retrieved successfully.', $result);
-        } catch (EventsException $e) {
-            return $this->responseService->json(false, $e->getMessage(), null, 400);
+
         } catch (\Exception $e) {
-            return $this->responseService->json(false, $e, null, 500);
+            return $this->responseService->json(false, $e->getMessage(), null, 500);
         }
     }
 
-    #[Route('/events/{event_id}/bookings/stats', name: 'event_bookings_stats', methods: ['GET'], requirements: ['event_id' => '\d+'])]
-    public function getBookingStats(int $organization_id, int $event_id, Request $request): JsonResponse
-    {
-        $user = $request->attributes->get('user');
-
-        try {
-            // Check if user has access to this organization
-            if (!$organization = $this->userOrganizationService->getOrganizationByUser($organization_id, $user)) {
-                return $this->responseService->json(false, 'Organization was not found.');
-            }
-            
-            // Get event by ID ensuring it belongs to the organization
-            if (!$event = $this->eventService->getEventByIdAndOrganization($event_id, $organization->entity)) {
-                return $this->responseService->json(false, 'Event was not found.');
-            }
-            
-            // Implementation for booking stats
-            // This would typically return counts, trends, etc.
-            
-            return $this->responseService->json(true, 'Stats retrieved successfully.', [
-                'total_bookings' => 0,
-                'confirmed' => 0,
-                'pending' => 0,
-                'cancelled' => 0
-            ]);
-        } catch (EventsException $e) {
-            return $this->responseService->json(false, $e->getMessage(), null, 400);
-        } catch (\Exception $e) {
-            return $this->responseService->json(false, $e, null, 500);
-        }
-    }
-
-    #[Route('/events/{event_id}/bookings/{id}', name: 'event_bookings_get_one#', methods: ['GET'], requirements: ['event_id' => '\d+', 'id' => '\d+'])]
+    #[Route('/events/{event_id}/bookings/{id}', name: 'event_bookings_get_one', methods: ['GET'], requirements: ['event_id' => '\d+', 'id' => '\d+'])]
     public function getBooking(int $organization_id, int $event_id, int $id, Request $request): JsonResponse
     {
         $user = $request->attributes->get('user');
@@ -143,19 +99,23 @@ class EventBookingController extends AbstractController
             if (!$organization = $this->userOrganizationService->getOrganizationByUser($organization_id, $user)) {
                 return $this->responseService->json(false, 'Organization was not found.');
             }
-            
+
             // Get event by ID ensuring it belongs to the organization
             if (!$event = $this->eventService->getEventByIdAndOrganization($event_id, $organization->entity)) {
                 return $this->responseService->json(false, 'Event was not found.');
             }
-            
-            // Get booking by ID
+
             $booking = $this->bookingService->getOne($id);
             
-            if (!$booking || $booking->getEvent()->getId() !== $event->getId()) {
+            if (!$booking) {
                 return $this->responseService->json(false, 'Booking was not found.');
             }
-            
+
+            // Verify booking belongs to the event
+            if ($booking->getEvent()->getId() !== $event->getId()) {
+                return $this->responseService->json(false, 'Booking was not found.');
+            }
+
             $bookingData = $booking->toArray();
             
             // Add guests
@@ -165,57 +125,56 @@ class EventBookingController extends AbstractController
             }, $guests);
             
             return $this->responseService->json(true, 'Booking retrieved successfully.', $bookingData);
-        } catch (EventsException $e) {
-            return $this->responseService->json(false, $e->getMessage(), null, 400);
+
         } catch (\Exception $e) {
-            return $this->responseService->json(false, $e, null, 500);
+            return $this->responseService->json(false, $e->getMessage(), null, 500);
         }
     }
 
-    #[Route('/events/{event_id}/bookings', name: 'event_bookings_create', methods: ['POST'])]  
+    #[Route('/events/{event_id}/bookings', name: 'event_bookings_create', methods: ['POST'], requirements: ['event_id' => '\d+'])]
     public function createBooking(int $organization_id, int $event_id, Request $request): JsonResponse
     {
         $data = json_decode($request->getContent(), true);
         
         try {
+            // Get event first
             $event = $this->eventService->getOne($event_id);
-
+            
+            // Check if event exists BEFORE using it
             if (!$event) {
                 return $this->responseService->json(false, 'Event was not found.');
             }
-
-            $data['event_id'] = $event->getId();
-
+            
+            // Get organization
             $organization = $event->getOrganization();
             
             if (!$organization) {
                 return $this->responseService->json(false, 'Organization was not found.');
             }
             
-            if (!$event = $this->eventService->getEventByIdAndOrganization($event_id, $organization)) {
-                return $this->responseService->json(false, 'Event was not found.');
+            if ($organization->getId() !== $organization_id) {
+                return $this->responseService->json(false, 'Event does not belong to the specified organization.');
             }
             
-            // Process form data
+            // NOW set the event_id
+            $data['event_id'] = $event->getId();
+            
+            // Validate basic form data
             if (isset($data['form_data']) && is_string($data['form_data'])) {
                 $data['form_data'] = json_decode($data['form_data'], true);
             }
             
-            // Ensure form data has required fields
-            if (!empty($data['form_data'])) {
-                // Validate that name and email exist in form data
-                if (empty($data['form_data']['primary_contact']['name'])) {
-                    return $this->responseService->json(false, 'Name is required.', null, 400);
-                }
-                
-                if (empty($data['form_data']['primary_contact']['email'])) {
-                    return $this->responseService->json(false, 'Email is required.', null, 400);
-                }
-                
-                // Validate email format
-                if (!filter_var($data['form_data']['primary_contact']['email'], FILTER_VALIDATE_EMAIL)) {
-                    return $this->responseService->json(false, 'Invalid email format.', null, 400);
-                }
+            if (!isset($data['form_data']['primary_contact']['name']) || empty($data['form_data']['primary_contact']['name'])) {
+                return $this->responseService->json(false, 'Name is required.', null, 400);
+            }
+            
+            if (empty($data['form_data']['primary_contact']['email'])) {
+                return $this->responseService->json(false, 'Email is required.', null, 400);
+            }
+            
+            // Validate email format
+            if (!filter_var($data['form_data']['primary_contact']['email'], FILTER_VALIDATE_EMAIL)) {
+                return $this->responseService->json(false, 'Invalid email format.', null, 400);
             }
             
             $booking = $this->bookingService->create($data);
@@ -228,18 +187,11 @@ class EventBookingController extends AbstractController
                 error_log('Failed to create contact from booking: ' . $e->getMessage());
             }
             
-            echo $booking->getStatus();
-            exit;
-        
-            if ($booking->getStatus() === 'pending') {
-                $this->sendPendingBookingEmails($booking);
-            } else {
-                // Send confirmation email (existing behavior)
-                $this->sendBookingConfirmationEmail($booking);
-                $this->sendHostNotificationEmail($booking);
-            }
+            // Send confirmation email to guest
+            $this->sendBookingConfirmationEmail($booking);
             
-            $this->reminderService->queueRemindersForBooking($booking);
+            // Send notification email to host(s)
+            $this->sendHostNotificationEmail($booking);
             
             $bookingData = $booking->toArray();
             
@@ -276,11 +228,11 @@ class EventBookingController extends AbstractController
         } catch (EventsException $e) {
             return $this->responseService->json(false, $e->getMessage(), null, 400);
         } catch (\Exception $e) {
-            return $this->responseService->json(false, $e, null, 500);
+            return $this->responseService->json(false, $e->getMessage(), null, 500);
         }
     }
 
-    #[Route('/events/{event_id}/bookings/{id}', name: 'event_bookings_update#', methods: ['PUT'], requirements: ['event_id' => '\d+', 'id' => '\d+'])]
+    #[Route('/events/{event_id}/bookings/{id}', name: 'event_bookings_update', methods: ['PUT'], requirements: ['event_id' => '\d+', 'id' => '\d+'])]
     public function updateBooking(int $organization_id, int $event_id, int $id, Request $request): JsonResponse
     {
         $user = $request->attributes->get('user');
@@ -291,21 +243,29 @@ class EventBookingController extends AbstractController
             if (!$organization = $this->userOrganizationService->getOrganizationByUser($organization_id, $user)) {
                 return $this->responseService->json(false, 'Organization was not found.');
             }
-            
+
             // Get event by ID ensuring it belongs to the organization
             if (!$event = $this->eventService->getEventByIdAndOrganization($event_id, $organization->entity)) {
                 return $this->responseService->json(false, 'Event was not found.');
             }
-            
-            // Get booking by ID
+
             $booking = $this->bookingService->getOne($id);
             
-            if (!$booking || $booking->getEvent()->getId() !== $event->getId()) {
+            if (!$booking) {
                 return $this->responseService->json(false, 'Booking was not found.');
             }
+
+            // Verify booking belongs to the event
+            if ($booking->getEvent()->getId() !== $event->getId()) {
+                return $this->responseService->json(false, 'Booking was not found.');
+            }
+
+            $booking = $this->bookingService->update($id, $data);
             
-            // Update booking
-            $this->bookingService->update($booking, $data);
+            // If status was updated to confirmed from pending, send confirmation email
+            if (isset($data['status']) && $data['status'] === 'confirmed' && $booking->getStatus() === 'confirmed') {
+                $this->sendBookingConfirmationEmail($booking);
+            }
             
             $bookingData = $booking->toArray();
             
@@ -316,48 +276,13 @@ class EventBookingController extends AbstractController
             }, $guests);
             
             return $this->responseService->json(true, 'Booking updated successfully.', $bookingData);
-        } catch (EventsException $e) {
-            return $this->responseService->json(false, $e->getMessage(), null, 400);
+
         } catch (\Exception $e) {
-            return $this->responseService->json(false, $e, null, 500);
+            return $this->responseService->json(false, $e->getMessage(), null, 500);
         }
     }
 
-    #[Route('/events/{event_id}/bookings/{id}/cancel', name: 'event_bookings_cancel#', methods: ['POST'], requirements: ['event_id' => '\d+', 'id' => '\d+'])]
-    public function cancelBooking(int $organization_id, int $event_id, int $id, Request $request): JsonResponse
-    {
-        $user = $request->attributes->get('user');
-
-        try {
-            // Check if user has access to this organization
-            if (!$organization = $this->userOrganizationService->getOrganizationByUser($organization_id, $user)) {
-                return $this->responseService->json(false, 'Organization was not found.');
-            }
-            
-            // Get event by ID ensuring it belongs to the organization
-            if (!$event = $this->eventService->getEventByIdAndOrganization($event_id, $organization->entity)) {
-                return $this->responseService->json(false, 'Event was not found.');
-            }
-            
-            // Get booking by ID
-            $booking = $this->bookingService->getOne($id);
-            
-            if (!$booking || $booking->getEvent()->getId() !== $event->getId()) {
-                return $this->responseService->json(false, 'Booking was not found.');
-            }
-            
-            // Cancel booking
-            $this->bookingService->cancel($booking);
-            
-            return $this->responseService->json(true, 'Booking cancelled successfully.', $booking->toArray());
-        } catch (EventsException $e) {
-            return $this->responseService->json(false, $e->getMessage(), null, 400);
-        } catch (\Exception $e) {
-            return $this->responseService->json(false, $e, null, 500);
-        }
-    }
-
-    #[Route('/events/{event_id}/bookings/{id}', name: 'event_bookings_delete#', methods: ['DELETE'], requirements: ['event_id' => '\d+', 'id' => '\d+'])]
+    #[Route('/events/{event_id}/bookings/{id}', name: 'event_bookings_delete', methods: ['DELETE'], requirements: ['event_id' => '\d+', 'id' => '\d+'])]
     public function deleteBooking(int $organization_id, int $event_id, int $id, Request $request): JsonResponse
     {
         $user = $request->attributes->get('user');
@@ -367,223 +292,215 @@ class EventBookingController extends AbstractController
             if (!$organization = $this->userOrganizationService->getOrganizationByUser($organization_id, $user)) {
                 return $this->responseService->json(false, 'Organization was not found.');
             }
-            
+
             // Get event by ID ensuring it belongs to the organization
             if (!$event = $this->eventService->getEventByIdAndOrganization($event_id, $organization->entity)) {
                 return $this->responseService->json(false, 'Event was not found.');
             }
-            
-            // Get booking by ID
+
             $booking = $this->bookingService->getOne($id);
             
-            if (!$booking || $booking->getEvent()->getId() !== $event->getId()) {
+            if (!$booking) {
                 return $this->responseService->json(false, 'Booking was not found.');
             }
-            
-            // Delete booking
-            $this->bookingService->delete($booking);
+
+            // Verify booking belongs to the event
+            if ($booking->getEvent()->getId() !== $event->getId()) {
+                return $this->responseService->json(false, 'Booking was not found.');
+            }
+
+            $this->bookingService->delete($id);
             
             return $this->responseService->json(true, 'Booking deleted successfully.');
-        } catch (EventsException $e) {
-            return $this->responseService->json(false, $e->getMessage(), null, 400);
+
         } catch (\Exception $e) {
-            return $this->responseService->json(false, $e, null, 500);
+            return $this->responseService->json(false, $e->getMessage(), null, 500);
+        }
+    }
+
+    #[Route('/events/{event_id}/bookings/{id}/cancel', name: 'event_bookings_cancel', methods: ['POST'], requirements: ['event_id' => '\d+', 'id' => '\d+'])]
+    public function cancelBooking(int $organization_id, int $event_id, int $id, Request $request): JsonResponse
+    {
+        $user = $request->attributes->get('user');
+        $data = json_decode($request->getContent(), true);
+
+        try {
+            // Check if user has access to this organization
+            if (!$organization = $this->userOrganizationService->getOrganizationByUser($organization_id, $user)) {
+                return $this->responseService->json(false, 'Organization was not found.');
+            }
+
+            // Get event by ID ensuring it belongs to the organization
+            if (!$event = $this->eventService->getEventByIdAndOrganization($event_id, $organization->entity)) {
+                return $this->responseService->json(false, 'Event was not found.');
+            }
+
+            $booking = $this->bookingService->getOne($id);
+            
+            if (!$booking) {
+                return $this->responseService->json(false, 'Booking was not found.');
+            }
+
+            // Verify booking belongs to the event
+            if ($booking->getEvent()->getId() !== $event->getId()) {
+                return $this->responseService->json(false, 'Booking was not found.');
+            }
+
+            // Cancel the booking
+            $cancelData = [
+                'status' => 'canceled',
+                'cancelled' => true,
+                'cancellation_reason' => $data['reason'] ?? null,
+                'cancelled_at' => new \DateTime(),
+                'cancelled_by' => $user
+            ];
+
+            $booking = $this->bookingService->update($id, $cancelData);
+            
+            $bookingData = $booking->toArray();
+            
+            return $this->responseService->json(true, 'Booking cancelled successfully.', $bookingData);
+
+        } catch (\Exception $e) {
+            return $this->responseService->json(false, $e->getMessage(), null, 500);
+        }
+    }
+
+    #[Route('/events/{event_id}/bookings/{id}/reminders', name: 'event_bookings_reminders', methods: ['POST'], requirements: ['event_id' => '\d+', 'id' => '\d+'])]
+    public function scheduleReminder(int $organization_id, int $event_id, int $id, Request $request): JsonResponse
+    {
+        $user = $request->attributes->get('user');
+        $data = json_decode($request->getContent(), true);
+
+        try {
+            // Check if user has access to this organization
+            if (!$organization = $this->userOrganizationService->getOrganizationByUser($organization_id, $user)) {
+                return $this->responseService->json(false, 'Organization was not found.');
+            }
+
+            // Get event by ID ensuring it belongs to the organization
+            if (!$event = $this->eventService->getEventByIdAndOrganization($event_id, $organization->entity)) {
+                return $this->responseService->json(false, 'Event was not found.');
+            }
+
+            $booking = $this->bookingService->getOne($id);
+            
+            if (!$booking) {
+                return $this->responseService->json(false, 'Booking was not found.');
+            }
+
+            // Verify booking belongs to the event
+            if ($booking->getEvent()->getId() !== $event->getId()) {
+                return $this->responseService->json(false, 'Booking was not found.');
+            }
+
+            // Schedule reminder
+            $reminderType = $data['type'] ?? '1_hour';
+            $reminder = $this->reminderService->scheduleReminder($booking, $reminderType);
+            
+            return $this->responseService->json(true, 'Reminder scheduled successfully.', [
+                'reminder_id' => $reminder->getId(),
+                'scheduled_at' => $reminder->getScheduledAt()->format('Y-m-d H:i:s')
+            ]);
+
+        } catch (\Exception $e) {
+            return $this->responseService->json(false, $e->getMessage(), null, 500);
         }
     }
 
     /**
-     * ✅ NEW: Send emails for pending bookings (requires approval)
+     * Send booking confirmation email to guest
      */
-    private function sendPendingBookingEmails(EventBookingEntity $booking): void
-    {
-        try {
-            $event = $booking->getEvent();
-            $formData = $booking->getFormDataAsArray();
-            
-            if (empty($formData['primary_contact']['name']) || empty($formData['primary_contact']['email'])) {
-                return;
-            }
-            
-            $guestName = $formData['primary_contact']['name'];
-            $guestEmail = $formData['primary_contact']['email'];
-            $startTime = $booking->getStartTime();
-            $duration = round(($booking->getEndTime()->getTimestamp() - $startTime->getTimestamp()) / 60);
-            
-            // Send "pending approval" email to guest
-            $this->emailService->send(
-                $guestEmail,
-                'meeting_scheduled', // We'll modify the template to handle pending status
-                [
-                    'guest_name' => $guestName,
-                    'meeting_name' => $event->getName(),
-                    'meeting_date' => $startTime->format('F j, Y'),
-                    'meeting_time' => $startTime->format('g:i A'),
-                    'meeting_duration' => $duration . ' minutes',
-                    'meeting_status' => 'pending', // ✅ NEW: Add status to template data
-                    'organizer_name' => $event->getOrganization()->getName(),
-                    'company_name' => $event->getOrganization()->getName(),
-                ]
-            );
-            
-            // ✅ FIXED: Use correct method name  
-            $assignees = $this->assigneeService->getAssigneesByEvent($event);
-            foreach ($assignees as $assignee) {
-                if (in_array($assignee->getRole(), ['creator', 'admin', 'host'])) {
-                    
-                    // ✅ DEBUG: Let's log what we're sending
-                    error_log('Sending PENDING host email with status: pending for booking ID: ' . $booking->getId());
-                    
-                    $this->emailService->send(
-                        $assignee->getUser()->getEmail(),
-                        'meeting_scheduled_host', // We'll modify this template too
-                        [
-                            'host_name' => $assignee->getUser()->getName(),
-                            'guest_name' => $guestName,
-                            'guest_email' => $guestEmail,
-                            'guest_phone' => $formData['primary_contact']['phone'] ?? '',
-                            'guest_message' => $formData['message'] ?? $formData['notes'] ?? '',
-                            'meeting_name' => $event->getName(),
-                            'meeting_date' => $startTime->format('F j, Y'),
-                            'meeting_time' => $startTime->format('g:i A'),
-                            'meeting_duration' => $duration,
-                            'meeting_status' => 'pending', // ✅ CRITICAL: This should trigger pending email
-                            'booking_id' => $booking->getId(),
-                            'organization_id' => $event->getOrganization()->getId(),
-                        ]
-                    );
-                }
-            }
-            
-        } catch (\Exception $e) {
-            error_log('Failed to send pending booking emails: ' . $e->getMessage());
-        }
-    }
-
     private function sendBookingConfirmationEmail(EventBookingEntity $booking): void
     {
         try {
+            $event = $booking->getEvent();
             $formData = $booking->getFormDataAsArray();
             
-            if (empty($formData['primary_contact']['name']) || empty($formData['primary_contact']['email'])) {
-                // No contact info, skip email
-                return;
-            }
-            
+            // Get guest information
             $guestName = $formData['primary_contact']['name'] ?? 'Guest';
             $guestEmail = $formData['primary_contact']['email'];
+            
+            // Get event details
             $startTime = $booking->getStartTime();
             $duration = round(($booking->getEndTime()->getTimestamp() - $startTime->getTimestamp()) / 60);
             
-            // Get organization info
-            $event = $booking->getEvent();
-            $organization = $event->getOrganization();
-            $organizerName = $organization ? $organization->getName() : 'Host';
-            $companyName = $organizerName;
+            // Get organizer/creator info
+            $organizer = $event->getCreatedBy();
+            $organizerName = $organizer ? $organizer->getName() : 'Host';
             
-            // Create links
-            $rescheduleLink = $_ENV['FRONTEND_URL'] ?? 'https://app.skedi.com';
-            $calendarLink = $this->generateCalendarLink($booking);
+            // Get organization info
+            $organization = $event->getOrganization();
+            $companyName = $organization ? $organization->getName() : '';
             
             // Determine location
-            $location = 'Online Meeting'; // Default
-            $meetingLink = '';
+            $location = $this->getEventLocation($event);
             
-            // Check for meeting link in form data
-            $formDataArray = $booking->getFormDataAsArray();
-            if (!empty($formDataArray['online_meeting']['link'])) {
-                $meetingLink = $formDataArray['online_meeting']['link'];
-            } elseif (!empty($formDataArray['meeting_link'])) {
-                $meetingLink = $formDataArray['meeting_link'];
-            }
+            // Get meeting link if available
+            $meetingLink = $formData['online_meeting']['link'] ?? '';
             
-            // Process location
-            $eventLocation = $event->getLocation();
-            if ($eventLocation && is_array($eventLocation)) {
-                if (isset($eventLocation['type'])) {
-                    switch ($eventLocation['type']) {
-                        case 'in_person':
-                            $location = $eventLocation['address'] ?? 'In-Person Meeting';
-                            break;
-                        case 'phone':
-                            $location = 'Phone Call';
-                            break;
-                        case 'google_meet':
-                            $location = 'Google Meet';
-                            break;
-                        case 'zoom':
-                            $location = 'Zoom Meeting';
-                            break;
-                        case 'custom':
-                            $location = $eventLocation['label'] ?? 'Custom Location';
-                            break;
-                        default:
-                            $location = 'Online Meeting';
-                    }
-                }
-                // Could be array of locations - just use the first one
-                elseif (is_array($eventLocation) && !empty($eventLocation[0])) {
-                    $firstLocation = $eventLocation[0];
-                    if (isset($firstLocation['type']) && $firstLocation['type'] === 'in_person') {
-                        $location = $firstLocation['address'] ?? 'In-Person Meeting';
-                    } else {
-                        $location = 'Online Meeting';
-                    }
-                }
-            }
+            // Generate frontend URLs
+            $frontendUrl = $_ENV['FRONTEND_URL'] ?? 'https://app.skedi.com';
+            $orgSlug = $organization ? $organization->getSlug() : '';
+            $eventSlug = $event->getSlug();
+            $rescheduleLink = $frontendUrl . '/organizations/' . $orgSlug . '/events/' . $eventSlug . '/bookings/' . $booking->getId() . '/reschedule';
+            $calendarLink = $rescheduleLink; // Or generate ICS link
             
-            // Send the email with variables matching the SendGrid template
+            // **GUEST EMAIL** - Uses meeting_scheduled template
             $this->emailService->send(
                 $guestEmail,
-                'meeting_scheduled',
+                'meeting_scheduled', // Template handles status internally
                 [
-                    // Guest info
                     'guest_name' => $guestName,
-
+                    'host_name' => $organizerName,
                     'meeting_name' => $event->getName(),
+                    'event_name' => $event->getName(),
                     'meeting_date' => $startTime->format('F j, Y'),
                     'meeting_time' => $startTime->format('g:i A'),
-                    'meeting_duration' => $duration . ' minutes',  
+                    'meeting_duration' => $duration . ' minutes',
+                    'duration' => $duration . ' minutes',
                     'meeting_location' => $location,
+                    'location' => $location,
                     'meeting_link' => $meetingLink,
-                    
-                    // Organizer info
-                    'organizer_name' => $organizerName,
                     'company_name' => $companyName,
-                    
-                    // Action links
                     'reschedule_link' => $rescheduleLink,
                     'calendar_link' => $calendarLink,
-                    
-                    // Keep original fields for backward compatibility
-                    'date' => $startTime->format('F j, Y'),
-                    'time' => $startTime->format('g:i A'),
-                    'duration' => $duration . ' minutes'
+                    'meeting_status' => $booking->getStatus(), // Key field for template logic
+                    'booking_id' => $booking->getId(),
+                    'organization_id' => $organization ? $organization->getId() : null
                 ]
             );
             
         } catch (\Exception $e) {
             // Log error but don't fail the booking
             error_log('Failed to send booking confirmation email: ' . $e->getMessage());
+            
+            if ($_ENV['APP_DEBUG'] ?? false) {
+                error_log('Email data: ' . json_encode([
+                    'booking_id' => $booking->getId(),
+                    'status' => $booking->getStatus(),
+                    'error' => $e->getMessage()
+                ]));
+            }
         }
     }
-
+    
+    /**
+     * Send notification email to host(s)
+     */
     private function sendHostNotificationEmail(EventBookingEntity $booking): void
     {
         try {
-            // Get the form data to extract guest information
+            $event = $booking->getEvent();
             $formData = $booking->getFormDataAsArray();
-            if (empty($formData['primary_contact'])) {
-                return;
-            }
             
-            // Guest information
+            // Get guest information
             $guestName = $formData['primary_contact']['name'] ?? 'Guest';
             $guestEmail = $formData['primary_contact']['email'];
             $guestPhone = $formData['primary_contact']['phone'] ?? '';
-            $guestMessage = $formData['message'] ?? $formData['notes'] ?? '';
+            $guestMessage = $formData['notes'] ?? '';
             
-            // Get event and booking details
-            $event = $booking->getEvent();
+            // Get event details
             $startTime = $booking->getStartTime();
             $duration = round(($booking->getEndTime()->getTimestamp() - $startTime->getTimestamp()) / 60);
             
@@ -592,88 +509,53 @@ class EventBookingController extends AbstractController
             $companyName = $organization ? $organization->getName() : '';
             
             // Determine location
-            $location = 'Online Meeting'; // Default
-            $meetingLink = '';
+            $location = $this->getEventLocation($event);
             
-            // Check for meeting link in form data
-            $formDataArray = $booking->getFormDataAsArray();
-            if (!empty($formDataArray['online_meeting']['link'])) {
-                $meetingLink = $formDataArray['online_meeting']['link'];
-            } elseif (!empty($formDataArray['meeting_link'])) {
-                $meetingLink = $formDataArray['meeting_link'];
-            }
+            // Get meeting link if available
+            $meetingLink = $formData['online_meeting']['link'] ?? '';
             
-            // Process location
-            $eventLocation = $event->getLocation();
-            if ($eventLocation && is_array($eventLocation)) {
-                if (isset($eventLocation['type'])) {
-                    switch ($eventLocation['type']) {
-                        case 'in_person':
-                            $location = $eventLocation['address'] ?? 'In-Person Meeting';
-                            break;
-                        case 'phone':
-                            $location = 'Phone Call';
-                            break;
-                        case 'google_meet':
-                            $location = 'Google Meet';
-                            break;
-                        case 'zoom':
-                            $location = 'Zoom Meeting';
-                            break;
-                        case 'custom':
-                            $location = $eventLocation['label'] ?? 'Custom Location';
-                            break;
-                        default:
-                            $location = 'Online Meeting';
-                    }
-                }
-                // Could be array of locations - just use the first one
-                elseif (is_array($eventLocation) && !empty($eventLocation[0])) {
-                    $firstLocation = $eventLocation[0];
-                    if (isset($firstLocation['type']) && $firstLocation['type'] === 'in_person') {
-                        $location = $firstLocation['address'] ?? 'In-Person Meeting';
-                    } else {
-                        $location = 'Online Meeting';
-                    }
-                }
-            }
+            // Generate frontend URLs
+            $frontendUrl = $_ENV['FRONTEND_URL'] ?? 'https://app.skedi.com';
+            $orgSlug = $organization ? $organization->getSlug() : '';
+            $eventSlug = $event->getSlug();
+            $rescheduleLink = $frontendUrl . '/organizations/' . $orgSlug . '/events/' . $eventSlug . '/bookings/' . $booking->getId() . '/reschedule';
             
-            // Create calendar link
-            $calendarLink = $this->generateCalendarLink($booking);
+            // Common email data for hosts
+            $commonHostData = [
+                'guest_name' => $guestName,
+                'guest_email' => $guestEmail,
+                'guest_phone' => $guestPhone,
+                'guest_message' => $guestMessage,
+                'meeting_name' => $event->getName(),
+                'event_name' => $event->getName(),
+                'meeting_date' => $startTime->format('F j, Y'),
+                'meeting_time' => $startTime->format('g:i A'),
+                'meeting_duration' => $duration . ' minutes',
+                'duration' => $duration . ' minutes',
+                'meeting_location' => $location,
+                'location' => $location,
+                'meeting_link' => $meetingLink,
+                'company_name' => $companyName,
+                'reschedule_link' => $rescheduleLink,
+                'meeting_status' => $booking->getStatus(), // Key field for template logic
+                'booking_id' => $booking->getId(),
+                'organization_id' => $organization ? $organization->getId() : null,
+                'custom_fields' => $formData['custom_fields'] ?? []
+            ];
             
-            // ✅ FIXED: Use correct method name
+            // **HOST EMAILS** - Send to all assignees
             $assignees = $this->assigneeService->getAssigneesByEvent($event);
+            
             foreach ($assignees as $assignee) {
-                if (in_array($assignee->getRole(), ['creator', 'admin', 'host'])) {
-                    $this->emailService->send(
-                        $assignee->getUser()->getEmail(),
-                        'meeting_scheduled_host',
-                        [
-                            // Host info
-                            'host_name' => $assignee->getUser()->getName() ?? 'Host',
-                            
-                            // Guest info
-                            'guest_name' => $guestName,
-                            'guest_email' => $guestEmail,
-                            'guest_phone' => $guestPhone,
-                            'guest_message' => $guestMessage,
-                            
-                            // Meeting details
-                            'meeting_name' => $event->getName(),
-                            'meeting_date' => $startTime->format('F j, Y'),
-                            'meeting_time' => $startTime->format('g:i A'),
-                            'meeting_duration' => $duration,
-                            'meeting_location' => $location,
-                            'meeting_link' => $meetingLink,
-                            
-                            // Company info
-                            'company_name' => $companyName,
-                            
-                            // Calendar link
-                            'calendar_link' => $calendarLink
-                        ]
-                    );
-                }
+                $hostData = array_merge($commonHostData, [
+                    'host_name' => $assignee->getUser()->getName()
+                ]);
+                
+                $this->emailService->send(
+                    $assignee->getUser()->getEmail(),
+                    'meeting_scheduled_host', // Template handles status internally
+                    $hostData
+                );
             }
             
         } catch (\Exception $e) {
@@ -681,28 +563,57 @@ class EventBookingController extends AbstractController
             error_log('Failed to send host notification email: ' . $e->getMessage());
             
             if ($_ENV['APP_DEBUG'] ?? false) {
-                error_log('Host email error details: ' . json_encode([
+                error_log('Host email error: ' . json_encode([
                     'booking_id' => $booking->getId(),
-                    'error' => $e->getMessage(),
-                    'trace' => $e->getTraceAsString()
+                    'status' => $booking->getStatus(),
+                    'error' => $e->getMessage()
                 ]));
             }
         }
     }
-
-    private function generateCalendarLink(EventBookingEntity $booking): string
+    
+    /**
+     * Helper method to determine event location
+     */
+    private function getEventLocation($event): string
     {
-        // Generate Google Calendar link
-        $event = $booking->getEvent();
-        $startTime = $booking->getStartTime();
-        $endTime = $booking->getEndTime();
+        $location = 'Online Meeting'; // Default
+        $eventLocation = $event->getLocation();
         
-        $startDate = $startTime->format('Ymd\THis\Z');
-        $endDate = $endTime->format('Ymd\THis\Z');
+        if ($eventLocation && is_array($eventLocation)) {
+            // Check if it's a single location with 'type' key
+            if (isset($eventLocation['type'])) {
+                switch ($eventLocation['type']) {
+                    case 'in_person':
+                        $location = $eventLocation['address'] ?? 'In-Person Meeting';
+                        break;
+                    case 'phone':
+                        $location = 'Phone Call';
+                        break;
+                    case 'google_meet':
+                        $location = 'Google Meet';
+                        break;
+                    case 'zoom':
+                        $location = 'Zoom Meeting';
+                        break;
+                    case 'custom':
+                        $location = $eventLocation['label'] ?? 'Custom Location';
+                        break;
+                    default:
+                        $location = 'Online Meeting';
+                }
+            }
+            // Could be array of locations - use the first one
+            elseif (is_array($eventLocation) && !empty($eventLocation[0])) {
+                $firstLocation = $eventLocation[0];
+                if (isset($firstLocation['type']) && $firstLocation['type'] === 'in_person') {
+                    $location = $firstLocation['address'] ?? 'In-Person Meeting';
+                } else {
+                    $location = 'Online Meeting';
+                }
+            }
+        }
         
-        return "https://calendar.google.com/calendar/render?action=TEMPLATE" .
-               "&text=" . urlencode($event->getName()) .
-               "&dates=" . $startDate . "/" . $endDate .
-               "&details=" . urlencode('Meeting scheduled via Skedi');
+        return $location;
     }
 }

@@ -219,10 +219,23 @@ class ResendProvider implements EmailProviderInterface
     }
         
     /**
-     * Get subject line for template
+     * Get subject line for template - ONLY CHANGE IS HERE!
      */
     private function getSubjectForTemplate(string $templateId, array $data): string
     {
+        $meetingStatus = $data['meeting_status'] ?? 'confirmed';
+
+        
+        // Check status for meeting templates only
+        if ($templateId === 'meeting_scheduled' && $meetingStatus === 'pending') {
+            return 'Booking Request Sent - Awaiting Approval';
+        }
+        
+        if ($templateId === 'meeting_scheduled_host' && $meetingStatus === 'pending') {
+            return 'Meeting Approval Required';
+        }
+        
+        // Default subjects (your original working ones)
         $subjects = [
             'meeting_scheduled' => 'Your meeting has been scheduled',
             'meeting_scheduled_host' => 'New meeting booked',
