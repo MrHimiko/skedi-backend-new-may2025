@@ -42,6 +42,9 @@ class EventEntity
     #[ORM\Column(name: "schedule", type: "json", nullable: true)]
     private ?array $schedule = null;
 
+    #[ORM\Column(name: "buffer_time", type: "integer", options: ["default" => 0])]
+    private int $bufferTime = 0;
+
     #[ORM\Column(name: "location", type: "json", nullable: true)]
     private ?array $location = null;
 
@@ -112,11 +115,24 @@ class EventEntity
         return $this->description;
     }
     
+    
     public function setDescription(?string $description): self
     {
         $this->description = $description;
         return $this;
     }
+
+    public function getBufferTime(): int
+    {
+        return $this->bufferTime;
+    }
+
+    public function setBufferTime(int $bufferTime): self
+    {
+        $this->bufferTime = $bufferTime;
+        return $this;
+    }
+
     
     public function getOrganization(): OrganizationEntity
     {
@@ -278,9 +294,11 @@ class EventEntity
             'acceptanceRequired' => $this->isAcceptanceRequired(),
             'organization_id' => $this->getOrganization()->getId(),
             'created_by' => $this->getCreatedBy()->getId(),
+            'buffer_time' => $this->getBufferTime(),
             'deleted' => $this->isDeleted(),
             'updated' => $this->getUpdated()->format('Y-m-d H:i:s'),
             'created' => $this->getCreated()->format('Y-m-d H:i:s'),
+            
         ];
         
         if ($this->getTeam()) {

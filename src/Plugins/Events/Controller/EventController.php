@@ -482,7 +482,6 @@ class EventController extends AbstractController
         $date = $request->query->get('date');
         $requestedDuration = $request->query->get('duration');
         $timezone = $request->query->get('timezone', 'UTC');
-        $bufferHours = $request->query->get('buffer_hours', 0); 
         
         if (!$date) {
             return $this->responseService->json(false, 'Date parameter is required.', null, 400);
@@ -496,14 +495,15 @@ class EventController extends AbstractController
                 return $this->responseService->json(false, 'not-found', null, 404);
             }
 
-
             // Get event by slug and organization
             $event = $this->eventService->getEventBySlug($event_slug, null, $organization);
-
 
             if (!$event || $event->isDeleted()) {
                 return $this->responseService->json(false, 'not-found', null, 404);
             }
+            
+            // Get buffer time from event (stored in minutes)
+            $bufferMinutes = $event->getBufferTime();
             
             // Get durations from event
             $durations = $event->getDuration();
@@ -545,21 +545,23 @@ class EventController extends AbstractController
                 $dateObj, 
                 $durationMinutes, 
                 $timezone,
-                (int)$bufferHours // Pass the buffer hours
+                $bufferMinutes // Pass buffer time from event (in minutes)
             );
             
             return $this->responseService->json(true, 'retrieve', [
                 'slots' => $slots,
-                'timezone' => $timezone,
-                'duration' => $durationMinutes,
-                'buffer_hours' => (int)$bufferHours
+                'event' => [
+                    'id' => $event->getId(),
+                    'name' => $event->getName(),
+                    'buffer_time' => $bufferMinutes
+                ]
             ]);
-        } catch (EventsException $e) {
-            return $this->responseService->json(false, $e->getMessage(), null, 400);
+            
         } catch (\Exception $e) {
-            return $this->responseService->json(false, $e, null, 500);
+            return $this->responseService->json(false, $e->getMessage(), null, 500);
         }
     }
+
 
 
 
@@ -731,7 +733,6 @@ class EventController extends AbstractController
         try {
             // Get timezone and other parameters
             $timezone = $request->query->get('timezone', 'UTC');
-            $bufferHours = $request->query->get('buffer_hours', 0);
             $requestedDuration = $request->query->get('duration');
             
             // First, get the organization by slug
@@ -745,6 +746,9 @@ class EventController extends AbstractController
             if (!$event || $event->isDeleted()) {
                 return $this->responseService->json(false, 'Event not found.', null, 404);
             }
+            
+            // Get buffer time from event (stored in minutes)
+            $bufferMinutes = $event->getBufferTime();
             
             // Build event data (same as getPublicEventInfo)
             $eventData = $event->toArray();
@@ -763,6 +767,9 @@ class EventController extends AbstractController
                 'name' => $organization->getName(),
                 'slug' => $organization->getSlug()
             ];
+            
+            // Add buffer time to event data
+            $eventData['buffer_time'] = $bufferMinutes;
             
             // Remove sensitive data
             unset($eventData['created_by']);
@@ -791,7 +798,7 @@ class EventController extends AbstractController
                     $checkDate,
                     $duration,
                     $timezone,
-                    $bufferHours
+                    $bufferMinutes // Pass buffer time from event (in minutes)
                 );
                 
                 if (!empty($slots)) {
@@ -808,6 +815,7 @@ class EventController extends AbstractController
                     'date' => $selectedDate,
                     'duration' => $duration,
                     'timezone' => $timezone,
+                    'buffer_time' => $bufferMinutes,
                     'slots' => $availableSlots
                 ]
             ]);
@@ -816,4 +824,5 @@ class EventController extends AbstractController
             return $this->responseService->json(false, $e->getMessage(), null, 500);
         }
     }
+
 }

@@ -125,6 +125,10 @@ class EventService
                 'location' => new Assert\Optional([
                     new Assert\Type(['type' => ['string', 'array', 'object']]),
                 ]),
+                'buffer_time' => new Assert\Optional([
+                    new Assert\Type('integer'),
+                    new Assert\Range(['min' => 0, 'max' => 1440]) // 0 to 24 hours in minutes
+                ]),
             ];
             
             $transform = [
@@ -238,6 +242,11 @@ class EventService
                 'location' => new Assert\Optional([
                     new Assert\Type(['type' => ['string', 'array', 'object']]),
                 ]),
+                'bufferTime' => new Assert\Optional([
+                    new Assert\Type('integer'),
+                    new Assert\Range(['min' => 0, 'max' => 1440]) 
+                ]),
+                
             ];
             
             $transform = [
@@ -272,6 +281,10 @@ class EventService
                     $event->setTeam(null);
                 }
                 $this->entityManager->flush();
+            }
+
+            if (isset($data['buffer_time'])) {
+                $event->setBufferTime((int)$data['buffer_time']);
             }
 
     

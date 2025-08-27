@@ -1930,3 +1930,3492 @@ Symfony\Component\ErrorHandler\Error\FatalError {#676
 
  [OK] Processed 0 emails: 0 sent, 0 failed                                      
 
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+🔍 GUEST TEMPLATE DEBUG: {
+    "meeting_status": "confirmed",
+    "booking_id": 256,
+    "organization_id": 54,
+    "all_keys": [
+        "app_url",
+        "app_name",
+        "duration",
+        "location",
+        "host_name",
+        "booking_id",
+        "event_name",
+        "guest_name",
+        "company_name",
+        "current_year",
+        "meeting_date",
+        "meeting_link",
+        "meeting_name",
+        "meeting_time",
+        "calendar_link",
+        "meeting_status",
+        "organization_id",
+        "reschedule_link",
+        "meeting_duration",
+        "meeting_location"
+    ]
+}
+🔍 GUEST TEMPLATE STATUS CHECK: meetingStatus=confirmed
+🔍 GUEST TEMPLATE: Using CONFIRMED header
+🔍 GUEST TEMPLATE: Using CONFIRMED message content
+ [OK] Sent email to: sadsa@dsa.com                                              
+
+ [OK] Sent email to: stefan@divhunt.com                                         
+
+ [ERROR] Failed to send email to aleksandra.pakic8@gmail.com: Too many requests.
+         You can only make 2 requests per second. See rate limit response       
+         headers for more information. Or contact support to increase rate      
+         limit.                                                                 
+
+ [ERROR] Failed to send email to stefan@divhunt.com: Too many requests. You can 
+         only make 2 requests per second. See rate limit response headers for   
+         more information. Or contact support to increase rate limit.           
+
+ [ERROR] Failed to send email to aleksandra.pakic8@gmail.com: Too many requests.
+         You can only make 2 requests per second. See rate limit response       
+         headers for more information. Or contact support to increase rate      
+         limit.                                                                 
+
+🔍 GUEST TEMPLATE DEBUG: {
+    "meeting_status": "confirmed",
+    "booking_id": 257,
+    "organization_id": 54,
+    "all_keys": [
+        "app_url",
+        "app_name",
+        "duration",
+        "location",
+        "host_name",
+        "booking_id",
+        "event_name",
+        "guest_name",
+        "company_name",
+        "current_year",
+        "meeting_date",
+        "meeting_link",
+        "meeting_name",
+        "meeting_time",
+        "calendar_link",
+        "meeting_status",
+        "organization_id",
+        "reschedule_link",
+        "meeting_duration",
+        "meeting_location"
+    ]
+}
+🔍 GUEST TEMPLATE STATUS CHECK: meetingStatus=confirmed
+🔍 GUEST TEMPLATE: Using CONFIRMED header
+🔍 GUEST TEMPLATE: Using CONFIRMED message content
+ [ERROR] Failed to send email to sadsa@dsa.com: Too many requests. You can only 
+         make 2 requests per second. See rate limit response headers for more   
+         information. Or contact support to increase rate limit.                
+
+ [OK] Processed 6 emails: 2 sent, 4 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Sent email to: aleksandra.pakic8@gmail.com                                
+
+ [OK] Processed 1 emails: 1 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Sent email to: stefan@divhunt.com                                         
+
+ [OK] Sent email to: aleksandra.pakic8@gmail.com                                
+
+🔍 GUEST TEMPLATE DEBUG: {
+    "meeting_status": "confirmed",
+    "booking_id": 257,
+    "organization_id": 54,
+    "all_keys": [
+        "app_url",
+        "app_name",
+        "duration",
+        "location",
+        "host_name",
+        "booking_id",
+        "event_name",
+        "guest_name",
+        "company_name",
+        "current_year",
+        "meeting_date",
+        "meeting_link",
+        "meeting_name",
+        "meeting_time",
+        "calendar_link",
+        "meeting_status",
+        "organization_id",
+        "reschedule_link",
+        "meeting_duration",
+        "meeting_location"
+    ]
+}
+🔍 GUEST TEMPLATE STATUS CHECK: meetingStatus=confirmed
+🔍 GUEST TEMPLATE: Using CONFIRMED header
+🔍 GUEST TEMPLATE: Using CONFIRMED message content
+ [ERROR] Failed to send email to sadsa@dsa.com: Too many requests. You can only 
+         make 2 requests per second. See rate limit response headers for more   
+         information. Or contact support to increase rate limit.                
+
+ [OK] Processed 3 emails: 2 sent, 1 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+🔍 GUEST TEMPLATE DEBUG: {
+    "meeting_status": "confirmed",
+    "booking_id": 257,
+    "organization_id": 54,
+    "all_keys": [
+        "app_url",
+        "app_name",
+        "duration",
+        "location",
+        "host_name",
+        "booking_id",
+        "event_name",
+        "guest_name",
+        "company_name",
+        "current_year",
+        "meeting_date",
+        "meeting_link",
+        "meeting_name",
+        "meeting_time",
+        "calendar_link",
+        "meeting_status",
+        "organization_id",
+        "reschedule_link",
+        "meeting_duration",
+        "meeting_location"
+    ]
+}
+🔍 GUEST TEMPLATE STATUS CHECK: meetingStatus=confirmed
+🔍 GUEST TEMPLATE: Using CONFIRMED header
+🔍 GUEST TEMPLATE: Using CONFIRMED message content
+ [OK] Sent email to: sadsa@dsa.com                                              
+
+ [OK] Processed 1 emails: 1 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+🔍 GUEST TEMPLATE DEBUG: {
+    "meeting_status": "confirmed",
+    "booking_id": 258,
+    "organization_id": 54,
+    "all_keys": [
+        "app_url",
+        "app_name",
+        "duration",
+        "location",
+        "host_name",
+        "booking_id",
+        "event_name",
+        "guest_name",
+        "company_name",
+        "current_year",
+        "meeting_date",
+        "meeting_link",
+        "meeting_name",
+        "meeting_time",
+        "calendar_link",
+        "meeting_status",
+        "organization_id",
+        "reschedule_link",
+        "meeting_duration",
+        "meeting_location"
+    ]
+}
+🔍 GUEST TEMPLATE STATUS CHECK: meetingStatus=confirmed
+🔍 GUEST TEMPLATE: Using CONFIRMED header
+🔍 GUEST TEMPLATE: Using CONFIRMED message content
+ [OK] Sent email to: sadsa@dsa.com                                              
+
+ [OK] Sent email to: stefan@divhunt.com                                         
+
+ [ERROR] Failed to send email to aleksandra.pakic8@gmail.com: Too many requests.
+         You can only make 2 requests per second. See rate limit response       
+         headers for more information. Or contact support to increase rate      
+         limit.                                                                 
+
+ [OK] Processed 3 emails: 2 sent, 1 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Sent email to: aleksandra.pakic8@gmail.com                                
+
+ [OK] Processed 1 emails: 1 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+🔍 GUEST TEMPLATE DEBUG: {
+    "meeting_status": "confirmed",
+    "booking_id": 259,
+    "organization_id": 54,
+    "all_keys": [
+        "app_url",
+        "app_name",
+        "duration",
+        "location",
+        "host_name",
+        "booking_id",
+        "event_name",
+        "guest_name",
+        "company_name",
+        "current_year",
+        "meeting_date",
+        "meeting_link",
+        "meeting_name",
+        "meeting_time",
+        "calendar_link",
+        "meeting_status",
+        "organization_id",
+        "reschedule_link",
+        "meeting_duration",
+        "meeting_location"
+    ]
+}
+🔍 GUEST TEMPLATE STATUS CHECK: meetingStatus=confirmed
+🔍 GUEST TEMPLATE: Using CONFIRMED header
+🔍 GUEST TEMPLATE: Using CONFIRMED message content
+ [OK] Sent email to: sadsa@dsa.com                                              
+
+ [OK] Sent email to: stefan@divhunt.com                                         
+
+ [ERROR] Failed to send email to aleksandra.pakic8@gmail.com: Too many requests.
+         You can only make 2 requests per second. See rate limit response       
+         headers for more information. Or contact support to increase rate      
+         limit.                                                                 
+
+ [OK] Processed 3 emails: 2 sent, 1 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Sent email to: stefan@divhunt.com                                         
+
+🔍 GUEST TEMPLATE DEBUG: {
+    "meeting_status": "confirmed",
+    "booking_id": 260,
+    "organization_id": 54,
+    "all_keys": [
+        "app_url",
+        "app_name",
+        "duration",
+        "location",
+        "host_name",
+        "booking_id",
+        "event_name",
+        "guest_name",
+        "company_name",
+        "current_year",
+        "meeting_date",
+        "meeting_link",
+        "meeting_name",
+        "meeting_time",
+        "calendar_link",
+        "meeting_status",
+        "organization_id",
+        "reschedule_link",
+        "meeting_duration",
+        "meeting_location"
+    ]
+}
+🔍 GUEST TEMPLATE STATUS CHECK: meetingStatus=confirmed
+🔍 GUEST TEMPLATE: Using CONFIRMED header
+🔍 GUEST TEMPLATE: Using CONFIRMED message content
+ [OK] Sent email to: sadsa@dsa.com                                              
+
+ [ERROR] Failed to send email to aleksandra.pakic8@gmail.com: Too many requests.
+         You can only make 2 requests per second. See rate limit response       
+         headers for more information. Or contact support to increase rate      
+         limit.                                                                 
+
+ [OK] Processed 3 emails: 2 sent, 1 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Sent email to: aleksandra.pakic8@gmail.com                                
+
+ [OK] Processed 1 emails: 1 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Sent email to: aleksandra.pakic8@gmail.com                                
+
+ [OK] Processed 1 emails: 1 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Sent email to: sadsa@dsa.com                                              
+
+ [OK] Processed 1 emails: 1 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Sent email to: ksad@123.com                                               
+
+ [OK] Processed 1 emails: 1 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Sent email to: sadsa@dsa.com                                              
+
+ [OK] Sent email to: sadsa@dsa.com                                              
+
+ [OK] Processed 2 emails: 2 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Sent email to: sadsa@dsa.com                                              
+
+ [OK] Sent email to: fdisjf@dsa.com                                             
+
+ [OK] Processed 2 emails: 2 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Sent email to: sadsa@dsa.com                                              
+
+ [OK] Processed 1 emails: 1 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Sent email to: accept@dsa.com                                             
+
+ [OK] Processed 1 emails: 1 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Sent email to: Dtchess@gmail.com                                          
+
+ [OK] Processed 1 emails: 1 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Sent email to: sadsa@dsa.com                                              
+
+ [OK] Processed 1 emails: 1 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Sent email to: Dtchess@gmail.com                                          
+
+ [OK] Processed 1 emails: 1 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+
+
+ [INFO] Processing email queue (limit: 50)...                                   
+
+ [OK] Processed 0 emails: 0 sent, 0 failed                                      
+

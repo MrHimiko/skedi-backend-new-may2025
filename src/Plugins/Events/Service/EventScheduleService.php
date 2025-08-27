@@ -268,18 +268,16 @@ class EventScheduleService
         return true; // Available
     }
 
-    /**
-     * Get available time slots for a day based on the schedule and existing bookings with timezone support
-     */
+
     public function getAvailableTimeSlots(
         EventEntity $event, 
         DateTimeInterface $date, 
         ?int $durationMinutes = null, 
         ?string $clientTimezone = null,
-        int $bufferHours = 1 
+        int $bufferMinutes = 0 
     ): array {
-        // Get available slots based on event schedule
-        $slots = $this->getBaseAvailableTimeSlots($event, $date, $durationMinutes, $clientTimezone);
+        // Get available slots based on event schedule with buffer time
+        $slots = $this->getBaseAvailableTimeSlots($event, $date, $durationMinutes, $clientTimezone, $bufferMinutes);
         
         // No need to check host availability if there are no slots
         if (empty($slots)) {
@@ -305,7 +303,6 @@ class EventScheduleService
             return $this->filterSlotsByAllHostsAvailable($slots, $hosts);
         }
     }
-    
     /**
      * Get base available time slots without checking host availability
      */
@@ -314,7 +311,7 @@ class EventScheduleService
         DateTimeInterface $date, 
         ?int $durationMinutes = null, 
         ?string $clientTimezone = null,
-        int $bufferHours = 1
+        int $bufferMinutes = 0
     ): array {
         // Set default timezone if not provided
         if (!$clientTimezone) {
@@ -406,7 +403,7 @@ class EventScheduleService
                 ];
             }
             
-            // Get existing bookings for this UTC day
+            // Get existing bookings for this UTC day using direct query
             $existingBookings = $this->getEventBookingsForDate($event, $utcDayToCheck);
             
             // Generate time slots in 15-minute increments
@@ -434,10 +431,15 @@ class EventScheduleService
                     }
                 }
                 
-                // Check bookings
+                // Check bookings WITH BUFFER TIME (in minutes)
                 if (!$hasConflict) {
                     foreach ($existingBookings as $booking) {
-                        if ($slotStart < $booking['end'] && $slotEnd > $booking['start']) {
+                        // Apply buffer time: extend the busy period AFTER the booking ends
+                        $busyUntil = clone $booking['end'];
+                        $busyUntil->add(new \DateInterval('PT' . $bufferMinutes . 'M')); // Add buffer minutes
+                        
+                        // Check if new slot conflicts with booking OR its buffer period
+                        if ($slotStart < $busyUntil && $slotEnd > $booking['start']) {
                             $hasConflict = true;
                             break;
                         }
@@ -453,7 +455,6 @@ class EventScheduleService
                     $clientSlotEnd->setTimezone(new \DateTimeZone($clientTimezone));
                     
                     // Check if this slot's START time falls within the requested client day
-                    // This is the key change - we ONLY care about the start time now
                     if ($clientSlotStart->format('Y-m-d') === $clientDate->format('Y-m-d')) {
                         $allSlots[] = [
                             'start' => $slotStart->format('Y-m-d H:i:s'),
@@ -472,7 +473,8 @@ class EventScheduleService
         
         return $allSlots;
     }
-    
+
+
     /**
      * Filter time slots where at least one host is available
      */
@@ -737,6 +739,7 @@ class EventScheduleService
         }
     }
 
+
     /**
      * Get all bookings for a specific event and date
      */
@@ -749,31 +752,19 @@ class EventScheduleService
         $endOfDay->setTime(23, 59, 59);
         
         try {
-            // Define filters for the date range
-            $filters = [
-                [
-                    'field' => 'startTime',
-                    'operator' => 'greater_than_or_equal',
-                    'value' => $startOfDay
-                ],
-                [
-                    'field' => 'startTime',
-                    'operator' => 'less_than_or_equal',
-                    'value' => $endOfDay
-                ]
-            ];
+            // Use direct query - CrudManager can't handle date filters properly
+            $qb = $this->entityManager->createQueryBuilder();
+            $qb->select('b')
+            ->from(EventBookingEntity::class, 'b')
+            ->where('b.event = :event')
+            ->andWhere('b.cancelled = false')
+            ->andWhere('b.startTime >= :startOfDay')
+            ->andWhere('b.startTime <= :endOfDay')
+            ->setParameter('event', $event)
+            ->setParameter('startOfDay', $startOfDay)
+            ->setParameter('endOfDay', $endOfDay);
             
-            // Use CrudManager to fetch bookings
-            $bookings = $this->crudManager->findMany(
-                EventBookingEntity::class,
-                $filters,
-                1, 
-                60, 
-                [
-                    'event' => $event,
-                    'cancelled' => false
-                ]
-            );
+            $bookings = $qb->getQuery()->getResult();
             
             $formattedBookings = [];
             foreach ($bookings as $booking) {
@@ -784,9 +775,11 @@ class EventScheduleService
             }
             
             return $formattedBookings;
-        } catch (CrudException $e) {
+            
+        } catch (\Exception $e) {
             error_log('Error fetching bookings: ' . $e->getMessage());
             return [];
         }
-    }
+    }   
+
 }
