@@ -512,7 +512,7 @@ class EventBookingController extends AbstractController
                     'company_name' => $companyName,
                     'reschedule_link' => $rescheduleLink,
                     'calendar_link' => $calendarLink,
-                    'meeting_status' => $booking->getStatus(), // Key field for template logic
+                    'meeting_status' => $booking->getStatus(), 
                     'booking_id' => $booking->getId(),
                     'organization_id' => $organization ? $organization->getId() : null
                 ]
@@ -584,7 +584,7 @@ class EventBookingController extends AbstractController
                 'meeting_link' => $meetingLink,
                 'company_name' => $companyName,
                 'reschedule_link' => $rescheduleLink,
-                'meeting_status' => $booking->getStatus(), // Key field for template logic
+                'meeting_status' => $booking->getStatus(), 
                 'booking_id' => $booking->getId(),
                 'organization_id' => $organization ? $organization->getId() : null,
                 'custom_fields' => $formData['custom_fields'] ?? []

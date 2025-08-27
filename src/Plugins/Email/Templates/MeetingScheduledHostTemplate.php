@@ -1,5 +1,6 @@
 <?php
-// Path: src/Plugins/Email/Templates/MeetingScheduledHostTemplate.php
+// src/Plugins/Email/Templates/MeetingScheduledHostTemplate.php
+// Replace the render method with this debug version
 
 namespace App\Plugins\Email\Templates;
 
@@ -7,6 +8,8 @@ class MeetingScheduledHostTemplate
 {
     public static function render(array $data): string
     {
+
+        
         // Extract variables with defaults
         $hostName = $data['host_name'] ?? 'Host';
         $guestName = $data['guest_name'] ?? 'Guest';
@@ -25,6 +28,8 @@ class MeetingScheduledHostTemplate
         $bookingId = $data['booking_id'] ?? '';
         $organizationId = $data['organization_id'] ?? '';
         
+
+        
         // Custom fields from booking form
         $customFields = $data['custom_fields'] ?? [];
         
@@ -41,9 +46,10 @@ class MeetingScheduledHostTemplate
 '</head>
 <body>
     <div class="container">'
-        . EmailStyles::getHeader($title) . '
-        
-        <p class="greeting">Hi ' . htmlspecialchars($hostName) . ',</p>';
+        . EmailStyles::getHeader($title);
+
+
+        $html .= '<p class="greeting">Hi ' . htmlspecialchars($hostName) . ',</p>';
             
         // Different message based on status  
         if ($meetingStatus === 'pending') {
