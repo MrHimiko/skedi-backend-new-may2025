@@ -13,6 +13,8 @@ use App\Plugins\Organizations\Service\UserOrganizationService;
 use App\Plugins\Organizations\Service\OrganizationService;
 use App\Plugins\Teams\Service\TeamService;
 use App\Plugins\Events\Entity\EventEntity;
+use App\Plugins\Events\Service\BookingReminderService;
+
 
 use DateTime;
 use DateTimeZone;
@@ -28,7 +30,7 @@ class EventController extends AbstractController
     private UserOrganizationService $userOrganizationService;
     private TeamService $teamService;
     private OrganizationService $organizationService;
-
+    private BookingReminderService $reminderService;
  
     public function __construct(
         ResponseService $responseService,
@@ -36,7 +38,8 @@ class EventController extends AbstractController
         EventScheduleService $scheduleService,
         UserOrganizationService $userOrganizationService,
         TeamService $teamService,
-        OrganizationService $organizationService  
+        OrganizationService $organizationService,
+        BookingReminderService $reminderService
     ) {
         $this->responseService = $responseService;
         $this->eventService = $eventService;
@@ -44,6 +47,7 @@ class EventController extends AbstractController
         $this->userOrganizationService = $userOrganizationService;
         $this->teamService = $teamService;
         $this->organizationService = $organizationService; 
+        $this->reminderService = $reminderService;
     }
 
     #[Route('/events', name: 'events_get_many#', methods: ['GET'])]

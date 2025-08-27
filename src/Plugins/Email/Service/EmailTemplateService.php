@@ -182,7 +182,17 @@ class EmailTemplateService
                     'app_url' => 'https://skedi.com'
                 ],
                 'required_fields' => ['content']
-            ]
+            ],
+            [
+                'name' => 'meeting_cancelled',
+                'provider_id' => 'meeting_cancelled',
+                'description' => 'Sent when a meeting is cancelled',
+                'default_data' => [
+                    'meeting_name' => 'Meeting',
+                    'cancellation_reason' => ''
+                ],
+                'required_fields' => ['meeting_name', 'date', 'time']
+            ],
         ];
         
         foreach ($defaultTemplates as $templateData) {

@@ -131,6 +131,7 @@ class EventBookingController extends AbstractController
         }
     }
 
+    
     #[Route('/events/{event_id}/bookings', name: 'event_bookings_create', methods: ['POST'], requirements: ['event_id' => '\d+'])]
     public function createBooking(int $organization_id, int $event_id, Request $request): JsonResponse
     {
@@ -193,6 +194,16 @@ class EventBookingController extends AbstractController
             // Send notification email to host(s)
             $this->sendHostNotificationEmail($booking);
             
+            // *** ADD REMINDERS FOR NON-PENDING BOOKINGS ***
+            if ($booking->getStatus() !== 'pending') {
+                try {
+                    $this->reminderService->queueRemindersForBooking($booking);
+                } catch (\Exception $e) {
+                    // Log error but don't fail the booking
+                    error_log('Failed to queue reminders for booking: ' . $e->getMessage());
+                }
+            }
+            
             $bookingData = $booking->toArray();
             
             // Get all guests (including those created from form data)
@@ -236,17 +247,26 @@ class EventBookingController extends AbstractController
     public function updateBooking(int $organization_id, int $event_id, int $id, Request $request): JsonResponse
     {
         $user = $request->attributes->get('user');
-        $data = $request->attributes->get('data');
+        $data = json_decode($request->getContent(), true);
 
         try {
-            // Check if user has access to this organization
-            if (!$organization = $this->userOrganizationService->getOrganizationByUser($organization_id, $user)) {
+            // Get event first (like in createBooking method)
+            $event = $this->eventService->getOne($event_id);
+            
+            // Check if event exists BEFORE using it
+            if (!$event) {
+                return $this->responseService->json(false, 'Event was not found.');
+            }
+            
+            // Get organization from event (like in createBooking method)
+            $organization = $event->getOrganization();
+            
+            if (!$organization) {
                 return $this->responseService->json(false, 'Organization was not found.');
             }
-
-            // Get event by ID ensuring it belongs to the organization
-            if (!$event = $this->eventService->getEventByIdAndOrganization($event_id, $organization->entity)) {
-                return $this->responseService->json(false, 'Event was not found.');
+            
+            if ($organization->getId() !== $organization_id) {
+                return $this->responseService->json(false, 'Event does not belong to the specified organization.');
             }
 
             $booking = $this->bookingService->getOne($id);
@@ -260,11 +280,35 @@ class EventBookingController extends AbstractController
                 return $this->responseService->json(false, 'Booking was not found.');
             }
 
-            $booking = $this->bookingService->update($id, $data);
+            // *** CAPTURE PREVIOUS STATUS FOR REMINDER LOGIC ***
+            $previousStatus = $booking->getStatus();
+            // *** ADD: CAPTURE PREVIOUS CANCELLED STATE ***
+            $wasPreviouslyCancelled = $booking->isCancelled();
+
+            // *** FIX: Pass EventBookingEntity object, not ID ***
+            $this->bookingService->update($booking, $data);
             
             // If status was updated to confirmed from pending, send confirmation email
-            if (isset($data['status']) && $data['status'] === 'confirmed' && $booking->getStatus() === 'confirmed') {
+            if (isset($data['status']) && $data['status'] === 'confirmed' && $booking->getStatus() === 'confirmed' && $previousStatus === 'pending') {
+      
                 $this->sendBookingConfirmationEmail($booking);
+                
+                // Queue reminders for the newly confirmed booking
+                try {
+                    $this->reminderService->queueRemindersForBooking($booking);
+                } catch (\Exception $e) {
+                    // Log error but don't fail the update
+                    error_log('Failed to queue reminders after booking confirmation: ' . $e->getMessage());
+                }
+            }
+            
+            // *** ADD: HANDLE CANCELLATION (NEW BLOCK) ***
+            if (!$wasPreviouslyCancelled && $booking->isCancelled()) {
+                try {
+                    $this->sendBookingCancellationEmail($booking, $data['cancellation_reason'] ?? null);
+                } catch (\Exception $e) {
+                    error_log('Failed to send booking cancellation email: ' . $e->getMessage());
+                }
             }
             
             $bookingData = $booking->toArray();
@@ -276,11 +320,13 @@ class EventBookingController extends AbstractController
             }, $guests);
             
             return $this->responseService->json(true, 'Booking updated successfully.', $bookingData);
-
+        } catch (EventsException $e) {
+            return $this->responseService->json(false, $e->getMessage(), null, 400);
         } catch (\Exception $e) {
             return $this->responseService->json(false, $e->getMessage(), null, 500);
         }
     }
+
 
     #[Route('/events/{event_id}/bookings/{id}', name: 'event_bookings_delete', methods: ['DELETE'], requirements: ['event_id' => '\d+', 'id' => '\d+'])]
     public function deleteBooking(int $organization_id, int $event_id, int $id, Request $request): JsonResponse
@@ -325,24 +371,22 @@ class EventBookingController extends AbstractController
         $data = json_decode($request->getContent(), true);
 
         try {
-            // Check if user has access to this organization
-            if (!$organization = $this->userOrganizationService->getOrganizationByUser($organization_id, $user)) {
-                return $this->responseService->json(false, 'Organization was not found.');
-            }
-
-            // Get event by ID ensuring it belongs to the organization
-            if (!$event = $this->eventService->getEventByIdAndOrganization($event_id, $organization->entity)) {
+            // Get event first
+            $event = $this->eventService->getOne($event_id);
+            
+            if (!$event) {
                 return $this->responseService->json(false, 'Event was not found.');
+            }
+            
+            $organization = $event->getOrganization();
+            
+            if (!$organization || $organization->getId() !== $organization_id) {
+                return $this->responseService->json(false, 'Event does not belong to the specified organization.');
             }
 
             $booking = $this->bookingService->getOne($id);
             
-            if (!$booking) {
-                return $this->responseService->json(false, 'Booking was not found.');
-            }
-
-            // Verify booking belongs to the event
-            if ($booking->getEvent()->getId() !== $event->getId()) {
+            if (!$booking || $booking->getEvent()->getId() !== $event->getId()) {
                 return $this->responseService->json(false, 'Booking was not found.');
             }
 
@@ -355,7 +399,10 @@ class EventBookingController extends AbstractController
                 'cancelled_by' => $user
             ];
 
-            $booking = $this->bookingService->update($id, $cancelData);
+            $this->bookingService->update($booking, $cancelData);
+            
+            // *** SEND CANCELLATION EMAIL ***
+            $this->sendBookingCancellationEmail($booking, $data['reason'] ?? null);
             
             $bookingData = $booking->toArray();
             
@@ -443,7 +490,7 @@ class EventBookingController extends AbstractController
             $frontendUrl = $_ENV['FRONTEND_URL'] ?? 'https://app.skedi.com';
             $orgSlug = $organization ? $organization->getSlug() : '';
             $eventSlug = $event->getSlug();
-            $rescheduleLink = $frontendUrl . '/organizations/' . $orgSlug . '/events/' . $eventSlug . '/bookings/' . $booking->getId() . '/reschedule';
+            $rescheduleLink = $frontendUrl . '/' . $orgSlug . '/schedule/' . $eventSlug;
             $calendarLink = $rescheduleLink; // Or generate ICS link
             
             // **GUEST EMAIL** - Uses meeting_scheduled template
@@ -518,7 +565,7 @@ class EventBookingController extends AbstractController
             $frontendUrl = $_ENV['FRONTEND_URL'] ?? 'https://app.skedi.com';
             $orgSlug = $organization ? $organization->getSlug() : '';
             $eventSlug = $event->getSlug();
-            $rescheduleLink = $frontendUrl . '/organizations/' . $orgSlug . '/events/' . $eventSlug . '/bookings/' . $booking->getId() . '/reschedule';
+            $rescheduleLink = $frontendUrl . '/' . $orgSlug . '/schedule/' . $eventSlug;
             
             // Common email data for hosts
             $commonHostData = [
@@ -616,4 +663,71 @@ class EventBookingController extends AbstractController
         
         return $location;
     }
+
+
+    /**
+     * Send booking cancellation email to guest
+     */
+    private function sendBookingCancellationEmail(EventBookingEntity $booking, ?string $reason = null): void
+    {
+        try {
+            $event = $booking->getEvent();
+            $formData = $booking->getFormDataAsArray();
+            
+            // Get guest information
+            $guestName = $formData['primary_contact']['name'] ?? 'Guest';
+            $guestEmail = $formData['primary_contact']['email'];
+            
+            if (empty($guestEmail)) {
+                return; // No email to send to
+            }
+            
+            // Get event details
+            $startTime = $booking->getStartTime();
+            $duration = round(($booking->getEndTime()->getTimestamp() - $startTime->getTimestamp()) / 60);
+            
+            // Get organizer/creator info
+            $organizer = $event->getCreatedBy();
+            $organizerName = $organizer ? $organizer->getName() : 'Host';
+            
+            // Get organization info
+            $organization = $event->getOrganization();
+            $companyName = $organization ? $organization->getName() : '';
+            
+            // Determine location
+            $location = $this->getEventLocation($event);
+            
+            // Generate rebook link
+            $frontendUrl = $_ENV['FRONTEND_URL'] ?? 'https://app.skedi.com';
+            $orgSlug = $organization ? $organization->getSlug() : '';
+            $eventSlug = $event->getSlug();
+            $rebookLink = $frontendUrl . '/' . $orgSlug . '/schedule/' . $eventSlug;
+            
+            // Send cancellation email
+            $this->emailService->send(
+                $guestEmail,
+                'meeting_cancelled',
+                [
+                    'guest_name' => $guestName,
+                    'host_name' => $organizerName,
+                    'meeting_name' => $event->getName(),
+                    'meeting_date' => $startTime->format('F j, Y'),
+                    'meeting_time' => $startTime->format('g:i A'),
+                    'meeting_duration' => $duration . ' minutes',
+                    'meeting_location' => $location,
+                    'company_name' => $companyName,
+                    'cancellation_reason' => $reason,
+                    'cancelled_by' => 'the host',
+                    'rebook_link' => $rebookLink,
+                    'booking_id' => $booking->getId(),
+                    'organization_id' => $organization ? $organization->getId() : null
+                ]
+            );
+            
+        } catch (\Exception $e) {
+            // Log error but don't fail the cancellation
+            error_log('Failed to send booking cancellation email: ' . $e->getMessage());
+        }
+    }
+
 }

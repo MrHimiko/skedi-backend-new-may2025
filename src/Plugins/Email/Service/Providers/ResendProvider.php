@@ -11,6 +11,8 @@ use App\Plugins\Email\Templates\BookingCreatedTemplate;
 use App\Plugins\Email\Templates\BookingConfirmedTemplate;
 use App\Plugins\Email\Templates\InvitationTemplate;
 use App\Plugins\Email\Templates\BlankTemplate;
+use App\Plugins\Email\Templates\MeetingCancelledTemplate;
+
 use Psr\Log\LoggerInterface;
 
 class ResendProvider implements EmailProviderInterface
@@ -209,6 +211,7 @@ class ResendProvider implements EmailProviderInterface
             'meeting_scheduled' => MeetingScheduledTemplate::class,
             'meeting_scheduled_host' => MeetingScheduledHostTemplate::class,
             'meeting_reminder' => MeetingReminderTemplate::class,
+            'meeting_cancelled' => MeetingCancelledTemplate::class,
             'booking_created' => BookingCreatedTemplate::class,
             'booking_confirmed' => BookingConfirmedTemplate::class,
             'invitation' => InvitationTemplate::class,
@@ -224,7 +227,7 @@ class ResendProvider implements EmailProviderInterface
     private function getSubjectForTemplate(string $templateId, array $data): string
     {
         $meetingStatus = $data['meeting_status'] ?? 'confirmed';
-
+        
         
         // Check status for meeting templates only
         if ($templateId === 'meeting_scheduled' && $meetingStatus === 'pending') {
@@ -243,6 +246,7 @@ class ResendProvider implements EmailProviderInterface
             'booking_created' => 'New booking created',
             'booking_confirmed' => 'Booking confirmed',
             'invitation' => 'You\'ve been invited',
+            'meeting_cancelled' => 'Meeting Cancelled',
             'blank' => $data['subject'] ?? 'Notification from Skedi',
         ];
         

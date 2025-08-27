@@ -7,14 +7,6 @@ class MeetingScheduledTemplate
 {
     public static function render(array $data): string
     {
-        // ✅ DEBUG: Log exactly what data the template receives  
-        error_log('🔍 GUEST TEMPLATE DEBUG: ' . json_encode([
-            'meeting_status' => $data['meeting_status'] ?? 'NOT_SET',
-            'booking_id' => $data['booking_id'] ?? 'NOT_SET',
-            'organization_id' => $data['organization_id'] ?? 'NOT_SET',
-            'all_keys' => array_keys($data)
-        ], JSON_PRETTY_PRINT));
-        
         // Extract variables with defaults
         $guestName = $data['guest_name'] ?? 'Guest';
         $meetingName = $data['meeting_name'] ?? 'Meeting';
@@ -28,11 +20,8 @@ class MeetingScheduledTemplate
         $rescheduleLink = $data['reschedule_link'] ?? '#';
         $calendarLink = $data['calendar_link'] ?? $rescheduleLink;
         
-        // ✅ KEY: Check if booking is pending approval
+        // Check if booking is pending approval
         $meetingStatus = $data['meeting_status'] ?? 'confirmed';
-        
-        // ✅ DEBUG: Log what status we're using
-        error_log('🔍 GUEST TEMPLATE STATUS CHECK: meetingStatus=' . $meetingStatus);
         
         $html = '<!DOCTYPE html>
 <html>
@@ -45,127 +34,85 @@ class MeetingScheduledTemplate
 <body>
     <div class="container">';
 
-        // ✅ CRITICAL: Different header based on status
+        // Different header based on status
         if ($meetingStatus === 'pending') {
-            $html .= EmailStyles::getHeader('⏳ Booking Request Sent!', '⏳');
-            error_log('🔍 GUEST TEMPLATE: Using PENDING header');
+            $html .= EmailStyles::getHeader('Booking Request Sent');
         } else {
-            $html .= EmailStyles::getHeader('🗓️ Meeting Scheduled!', '🗓️');
-            error_log('🔍 GUEST TEMPLATE: Using CONFIRMED header');
+            $html .= EmailStyles::getHeader('Meeting Scheduled');
         }
 
-        $html .= '<div class="content">
-            <p class="greeting">Hi ' . $guestName . ',</p>
+        $html .= '
+        <div class="content">
+            <p class="greeting">Hi ' . htmlspecialchars($guestName) . ',</p>
             
-            <p class="message">
-                Your meeting with <strong>' . $organizerName . '</strong>';
+            <p class="message">Your meeting with <strong>' . htmlspecialchars($organizerName) . '</strong>';
             
         // Add company name if provided
         if ($companyName) {
-            $html .= ' from <strong>' . $companyName . '</strong>';
+            $html .= ' from <strong>' . htmlspecialchars($companyName) . '</strong>';
         }
         
-        // ✅ CRITICAL: Different message based on status
+        // Different message based on status
         if ($meetingStatus === 'pending') {
             $html .= ' is pending approval.</p>
             
-            <div class="alert" style="background: #fff3cd; border: 1px solid #ffeaa7; padding: 15px; border-radius: 5px; margin: 20px 0;">
-                <strong>⏳ Awaiting Approval</strong><br>
-                Your booking request has been sent to ' . $organizerName . '. You\'ll receive a confirmation email once approved.
+            <div class="alert">
+                <div class="alert-title">Awaiting Approval</div>
+                Your booking request has been sent to ' . htmlspecialchars($organizerName) . '. You\'ll receive a confirmation email once approved.
             </div>';
-            
-            error_log('🔍 GUEST TEMPLATE: Using PENDING message content');
         } else {
             $html .= ' has been successfully scheduled.</p>
             
             <div class="success">
-                <strong>✓ Meeting confirmed</strong><br>
+                <div class="success-title">Meeting Confirmed</div>
                 We\'ve sent calendar invitations to all participants.
             </div>';
-            
-            error_log('🔍 GUEST TEMPLATE: Using CONFIRMED message content');
         }
         
         $html .= '
-            <div class="details">
-                <div class="detail-row">
-                    <strong>Meeting:</strong> ' . $meetingName . '
-                </div>
-                <div class="detail-row">
-                    <strong>Date:</strong> ' . $meetingDate . '
-                </div>
-                <div class="detail-row">
-                    <strong>Time:</strong> ' . $meetingTime . '
-                </div>
-                <div class="detail-row">
-                    <strong>Duration:</strong> ' . $meetingDuration . '
-                </div>
-                <div class="detail-row">
-                    <strong>Location:</strong> ' . $meetingLocation . '
-                </div>';
-        
-        // ✅ DEBUG FIELDS - Remove these after testing
-        $html .= '
-                <div class="detail-row" style="background: #ffe6e6; padding: 10px; border: 1px solid #ff0000;">
-                    <strong>🔍 DEBUG - Status:</strong> ' . $meetingStatus . '
-                </div>';
+        <div class="details">'
+            . EmailStyles::renderDetailRow('Meeting', $meetingName)
+            . EmailStyles::renderDetailRow('Date', $meetingDate)
+            . EmailStyles::renderDetailRow('Time', $meetingTime)
+            . EmailStyles::renderDetailRow('Duration', $meetingDuration)
+            . EmailStyles::renderDetailRow('Location', $meetingLocation);
                 
         // Add meeting link if provided
         if ($meetingLink) {
-            $html .= '
-                <div class="detail-row">
-                    <strong>Meeting Link:</strong> <a href="' . $meetingLink . '" style="color: #667eea;">Join Meeting</a>
-                </div>';
+            $html .= EmailStyles::renderDetailRow('Meeting Link', $meetingLink, true);
         }
         
         $html .= '
-            </div>';
+        </div>';
         
-        // ✅ CRITICAL: Different action buttons based on status
+        // Different action buttons based on status
         if ($meetingStatus === 'pending') {
             $html .= '
             <div class="center">
-                <p style="color: #718096; font-size: 14px; margin: 20px 0;">
-                    We\'ll notify you as soon as your booking is approved or if any changes are needed.
-                </p>
-            </div>';
-        } else {
-            $html .= '
-            <div class="center">
-                <a href="' . $calendarLink . '" class="button">Add to Calendar</a>';
-            
-            if ($rescheduleLink !== '#') {
-                $html .= '
-                <br><br>
-                <a href="' . $rescheduleLink . '" class="button-secondary">Reschedule</a>';
-            }
-            
-            $html .= '
+                <p class="message">We\'ll notify you as soon as your booking is approved or if any changes are needed.</p>
             </div>';
         }
         
-        $html .= '
-            <div style="margin-top: 30px; padding: 15px; background: #f8f9fa; border-radius: 6px;">
-                <p style="margin: 0; color: #718096; font-size: 14px;">';
-        
+        // Footer note based on status
         if ($meetingStatus === 'pending') {
             $html .= '
-                <strong>What happens next?</strong><br>
-                • ' . $organizerName . ' will review your booking request<br>
+            <div class="footer-note">
+                <div class="footer-note-title">What happens next:</div>
+                • ' . htmlspecialchars($organizerName) . ' will review your booking request<br>
                 • You\'ll receive an email confirmation once approved<br>
-                • If approved, calendar invitations will be sent automatically';
+                • If approved, calendar invitations will be sent automatically
+            </div>';
         } else {
             $html .= '
-                <strong>What\'s next?</strong><br>
+            <div class="footer-note">
+                <div class="footer-note-title">What\'s next:</div>
                 • You\'ll receive a reminder before the meeting<br>
                 • Join using the meeting link above<br>
-                • Contact ' . $organizerName . ' if you need to reschedule';
+                • Contact ' . htmlspecialchars($organizerName) . ' if you need to reschedule
+            </div>';
         }
         
-        $html .= '
-                </p>
-            </div>'
-            . EmailStyles::getFooter() . '
+        $html .= EmailStyles::getFooter() . '
         </div>
     </div>
 </body>
