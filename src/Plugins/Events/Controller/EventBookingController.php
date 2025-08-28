@@ -131,6 +131,160 @@ class EventBookingController extends AbstractController
         }
     }
 
+
+    #[Route('/events/{event_id}/bookings/{id}', name: 'event_bookings_update', methods: ['PUT'], requirements: ['event_id' => '\d+', 'id' => '\d+'])]
+    public function updateBooking(int $organization_id, int $event_id, int $id, Request $request): JsonResponse
+    {
+        $user = $request->attributes->get('user');
+        $data = json_decode($request->getContent(), true);
+
+        try {
+            // Get event first
+            $event = $this->eventService->getOne($event_id);
+            
+            if (!$event) {
+                return $this->responseService->json(false, 'Event was not found.');
+            }
+            
+            // Get organization from event
+            $organization = $event->getOrganization();
+            
+            if (!$organization) {
+                return $this->responseService->json(false, 'Organization was not found.');
+            }
+            
+            if ($organization->getId() !== $organization_id) {
+                return $this->responseService->json(false, 'Event does not belong to the specified organization.');
+            }
+
+            $booking = $this->bookingService->getOne($id);
+            
+            if (!$booking) {
+                return $this->responseService->json(false, 'Booking was not found.');
+            }
+
+            // Verify booking belongs to the event
+            if ($booking->getEvent()->getId() !== $event->getId()) {
+                return $this->responseService->json(false, 'Booking was not found.');
+            }
+
+            // Capture previous status for email logic
+            $previousStatus = $booking->getStatus();
+            $wasPreviouslyCancelled = $booking->isCancelled();
+
+            // Update the booking
+            $this->bookingService->update($booking, $data);
+            
+            // Handle status change from pending to confirmed
+            if (isset($data['status']) && $data['status'] === 'confirmed' && $booking->getStatus() === 'confirmed' && $previousStatus === 'pending') {
+                $this->sendBookingConfirmedEmailToGuest($booking);
+                $this->sendBookingEmails($booking);
+            }
+            
+            // Handle cancellation
+            if (!$wasPreviouslyCancelled && $booking->isCancelled()) {
+                try {
+                    $this->sendBookingCancellationEmail($booking, $data['cancellation_reason'] ?? null);
+                } catch (\Exception $e) {
+                    error_log('Failed to send booking cancellation email: ' . $e->getMessage());
+                }
+            }
+            
+            $bookingData = $booking->toArray();
+            
+            // Add guests
+            $guests = $this->bookingService->getGuests($booking);
+            $bookingData['guests'] = array_map(function($guest) {
+                return $guest->toArray();
+            }, $guests);
+            
+            return $this->responseService->json(true, 'Booking updated successfully.', $bookingData);
+            
+        } catch (EventsException $e) {
+            return $this->responseService->json(false, $e->getMessage(), null, 400);
+        } catch (\Exception $e) {
+            return $this->responseService->json(false, $e->getMessage(), null, 500);
+        }
+    }
+
+    /**
+     * Send booking confirmed email to guest using booking_confirmed template
+     */
+    private function sendBookingConfirmedEmailToGuest($booking): void
+    {
+        try {
+            $event = $booking->getEvent();
+            $formData = $booking->getFormDataAsArray();
+            $organization = $event->getOrganization();
+            
+            // Get guest info
+            $guestEmail = $formData['primary_contact']['email'];
+            $guestName = $formData['primary_contact']['name'] ?? 'Guest';
+            
+            // Get meeting details
+            $startTime = $booking->getStartTime();
+            $duration = round(($booking->getEndTime()->getTimestamp() - $startTime->getTimestamp()) / 60);
+            $organizer = $event->getCreatedBy();
+            $organizerName = $organizer ? $organizer->getName() : 'Host';
+            $location = $this->getEventLocation($event);
+            $meetingLink = $formData['online_meeting']['link'] ?? '';
+            
+            // Generate frontend URLs
+            $frontendUrl = $_ENV['FRONTEND_URL'] ?? 'https://app.skedi.com';
+            $orgSlug = $organization ? $organization->getSlug() : '';
+            $eventSlug = $event->getSlug();
+            $rescheduleLink = $frontendUrl . '/' . $orgSlug . '/schedule/' . $eventSlug;
+            $cancelLink = $rescheduleLink;
+            
+            // Build email data
+            $emailData = [
+                'guest_name' => $guestName,
+                'host_name' => $organizerName,
+                'event_name' => $event->getName(),
+                'event_date' => $startTime->format('F j, Y'),
+                'event_time' => $startTime->format('g:i A'),
+                'duration' => $duration . ' minutes',
+                'location' => $location,
+                'meeting_link' => $meetingLink,
+                'calendar_link' => $rescheduleLink,
+                'reschedule_link' => $rescheduleLink,
+                'cancel_link' => $cancelLink,
+                'company_name' => $organization ? $organization->getName() : '',
+                'booking_id' => $booking->getId(),
+                'organization_id' => $organization ? $organization->getId() : null
+            ];
+            
+            // *** USE QUEUE METHOD DIRECTLY (same as reminders) ***
+            $queueResult = $this->emailService->queue(
+                $guestEmail,
+                'booking_confirmed',
+                $emailData,
+                [
+                    'priority' => 8 // High priority for confirmation
+                ]
+            );
+            
+            // Log the result (same pattern as reminders)
+            if ($queueResult['success'] && !empty($queueResult['queue_id'])) {
+                error_log('SUCCESS: booking_confirmed email queued for guest: ' . $guestEmail . ' (queue_id: ' . $queueResult['queue_id'] . ')');
+                
+                // Update the queue record with booking reference (same as reminders)
+                $queueItem = $this->entityManager->getRepository(\App\Plugins\Email\Entity\EmailQueueEntity::class)->find($queueResult['queue_id']);
+                if ($queueItem) {
+                    $queueItem->setBooking($booking);
+                    $this->entityManager->flush();
+                    error_log('Updated queue item with booking reference');
+                }
+            } else {
+                error_log('FAILED: booking_confirmed email not queued - result: ' . json_encode($queueResult));
+            }
+            
+        } catch (\Exception $e) {
+            error_log('EXCEPTION in sendBookingConfirmedEmailToGuest: ' . $e->getMessage());
+            error_log('Stack trace: ' . $e->getTraceAsString());
+        }
+    }
+
     
     #[Route('/events/{event_id}/bookings', name: 'event_bookings_create', methods: ['POST'], requirements: ['event_id' => '\d+'])]
     public function createBooking(int $organization_id, int $event_id, Request $request): JsonResponse
@@ -178,138 +332,11 @@ class EventBookingController extends AbstractController
                 return $this->responseService->json(false, 'Invalid email format.', null, 400);
             }
             
+            // Create the booking
             $booking = $this->bookingService->create($data);
             
-            // Create or update contact from booking
-            try {
-                $this->contactService->createOrUpdateFromBooking($booking);
-            } catch (\Exception $e) {
-                // Log error but don't fail the booking
-                error_log('Failed to create contact from booking: ' . $e->getMessage());
-            }
-            
-            // Send confirmation email to guest
-            $this->sendBookingConfirmationEmail($booking);
-            
-            // Send notification email to host(s)
-            $this->sendHostNotificationEmail($booking);
-            
-            // *** ADD REMINDERS FOR NON-PENDING BOOKINGS ***
-            if ($booking->getStatus() !== 'pending') {
-                try {
-                    $this->reminderService->queueRemindersForBooking($booking);
-                } catch (\Exception $e) {
-                    // Log error but don't fail the booking
-                    error_log('Failed to queue reminders for booking: ' . $e->getMessage());
-                }
-            }
-            
-            $bookingData = $booking->toArray();
-            
-            // Get all guests (including those created from form data)
-            $guests = $this->bookingService->getGuests($booking);
-            $bookingData['guests'] = array_map(function($guest) {
-                return $guest->toArray();
-            }, $guests);
-            
-            // Also create a form submission if a form is attached to the event
-            try {
-                $attachedForm = $this->formService->getFormForEvent($event);
-                if ($attachedForm && !empty($data['form_data'])) {
-                    $submissionData = [
-                        'form_id' => $attachedForm->getId(),
-                        'event_id' => $event->getId(),
-                        'booking_id' => $booking->getId(),
-                        'data' => $data['form_data'],
-                        'ip_address' => $request->getClientIp(),
-                        'user_agent' => $request->headers->get('User-Agent'),
-                        'submission_source' => 'booking'
-                    ];
-                    
-                    // Create form submission
-                    $this->entityManager->getRepository(FormSubmissionEntity::class)
-                        ->create($submissionData);
-                }
-            } catch (\Exception $e) {
-                // Log but don't fail the booking
-                error_log('Failed to create form submission for booking: ' . $e->getMessage());
-            }
-            
-            return $this->responseService->json(true, 'Booking created successfully.', $bookingData, 201);
-        } catch (EventsException $e) {
-            return $this->responseService->json(false, $e->getMessage(), null, 400);
-        } catch (\Exception $e) {
-            return $this->responseService->json(false, $e->getMessage(), null, 500);
-        }
-    }
-
-    #[Route('/events/{event_id}/bookings/{id}', name: 'event_bookings_update', methods: ['PUT'], requirements: ['event_id' => '\d+', 'id' => '\d+'])]
-    public function updateBooking(int $organization_id, int $event_id, int $id, Request $request): JsonResponse
-    {
-        $user = $request->attributes->get('user');
-        $data = json_decode($request->getContent(), true);
-
-        try {
-            // Get event first (like in createBooking method)
-            $event = $this->eventService->getOne($event_id);
-            
-            // Check if event exists BEFORE using it
-            if (!$event) {
-                return $this->responseService->json(false, 'Event was not found.');
-            }
-            
-            // Get organization from event (like in createBooking method)
-            $organization = $event->getOrganization();
-            
-            if (!$organization) {
-                return $this->responseService->json(false, 'Organization was not found.');
-            }
-            
-            if ($organization->getId() !== $organization_id) {
-                return $this->responseService->json(false, 'Event does not belong to the specified organization.');
-            }
-
-            $booking = $this->bookingService->getOne($id);
-            
-            if (!$booking) {
-                return $this->responseService->json(false, 'Booking was not found.');
-            }
-
-            // Verify booking belongs to the event
-            if ($booking->getEvent()->getId() !== $event->getId()) {
-                return $this->responseService->json(false, 'Booking was not found.');
-            }
-
-            // *** CAPTURE PREVIOUS STATUS FOR REMINDER LOGIC ***
-            $previousStatus = $booking->getStatus();
-            // *** ADD: CAPTURE PREVIOUS CANCELLED STATE ***
-            $wasPreviouslyCancelled = $booking->isCancelled();
-
-            // *** FIX: Pass EventBookingEntity object, not ID ***
-            $this->bookingService->update($booking, $data);
-            
-            // If status was updated to confirmed from pending, send confirmation email
-            if (isset($data['status']) && $data['status'] === 'confirmed' && $booking->getStatus() === 'confirmed' && $previousStatus === 'pending') {
-      
-                $this->sendBookingConfirmationEmail($booking);
-                
-                // Queue reminders for the newly confirmed booking
-                try {
-                    $this->reminderService->queueRemindersForBooking($booking);
-                } catch (\Exception $e) {
-                    // Log error but don't fail the update
-                    error_log('Failed to queue reminders after booking confirmation: ' . $e->getMessage());
-                }
-            }
-            
-            // *** ADD: HANDLE CANCELLATION (NEW BLOCK) ***
-            if (!$wasPreviouslyCancelled && $booking->isCancelled()) {
-                try {
-                    $this->sendBookingCancellationEmail($booking, $data['cancellation_reason'] ?? null);
-                } catch (\Exception $e) {
-                    error_log('Failed to send booking cancellation email: ' . $e->getMessage());
-                }
-            }
+            // *** SEND EMAILS IMMEDIATELY AFTER BOOKING CREATION (SIMPLE VERSION) ***
+            $this->sendBookingEmails($booking);
             
             $bookingData = $booking->toArray();
             
@@ -319,11 +346,92 @@ class EventBookingController extends AbstractController
                 return $guest->toArray();
             }, $guests);
             
-            return $this->responseService->json(true, 'Booking updated successfully.', $bookingData);
+            return $this->responseService->json(true, 'Booking created successfully.', $bookingData, 201);
+            
         } catch (EventsException $e) {
             return $this->responseService->json(false, $e->getMessage(), null, 400);
         } catch (\Exception $e) {
             return $this->responseService->json(false, $e->getMessage(), null, 500);
+        }
+    }
+
+
+    /**
+     * ***  Queue emails  ***
+    */
+    private function sendBookingEmails($booking): void
+    {
+        try {
+            $event = $booking->getEvent();
+            $formData = $booking->getFormDataAsArray();
+            $organization = $event->getOrganization();
+            
+            // Basic email data
+            $guestEmail = $formData['primary_contact']['email'];
+            $guestName = $formData['primary_contact']['name'] ?? 'Guest';
+            $startTime = $booking->getStartTime();
+            $organizer = $event->getCreatedBy();
+            $organizerName = $organizer ? $organizer->getName() : 'Host';
+            
+            $emailData = [
+                'guest_name' => $guestName,
+                'host_name' => $organizerName,
+                'meeting_name' => $event->getName(),
+                'meeting_date' => $startTime->format('F j, Y'),
+                'meeting_time' => $startTime->format('g:i A'),
+                'meeting_status' => $booking->getStatus(),
+                'booking_id' => $booking->getId(),
+                'organization_id' => $organization->getId()
+            ];
+            
+            if ($booking->getStatus() === 'pending') {
+                // PENDING: Send approval request to hosts
+                $assignees = $this->assigneeService->getAssigneesByEvent($event);
+                foreach ($assignees as $assignee) {
+                    $hostData = array_merge($emailData, [
+                        'host_name' => $assignee->getUser()->getName()
+                    ]);
+                    
+                    // Queue host approval email
+                    $this->emailService->send(
+                        $assignee->getUser()->getEmail(),
+                        'meeting_scheduled_host',
+                        $hostData
+                    );
+                }
+            } else {
+                // CONFIRMED: Send confirmation to both
+                
+                // Queue guest confirmation
+                $this->emailService->send($guestEmail, 'meeting_scheduled', $emailData);
+                
+                // Queue host notifications
+                $assignees = $this->assigneeService->getAssigneesByEvent($event);
+                foreach ($assignees as $assignee) {
+                    $hostData = array_merge($emailData, [
+                        'host_name' => $assignee->getUser()->getName()
+                    ]);
+                    
+                    $this->emailService->send(
+                        $assignee->getUser()->getEmail(),
+                        'meeting_scheduled_host',
+                        $hostData
+                    );
+                }
+                
+                // Queue reminders
+                if ($booking->getStatus() !== 'pending') {
+                    try {
+                        $this->reminderService->queueRemindersForBooking($booking);
+                    } catch (\Exception $e) {
+                        error_log('Failed to queue reminders for booking: ' . $e->getMessage());
+                    }
+                }
+            }
+            
+        } catch (\Exception $e) {
+            // Don't fail the booking if emails fail
+            error_log('Failed to send booking emails: ' . $e->getMessage());
         }
     }
 
@@ -455,82 +563,7 @@ class EventBookingController extends AbstractController
         }
     }
 
-    /**
-     * Send booking confirmation email to guest
-     */
-    private function sendBookingConfirmationEmail(EventBookingEntity $booking): void
-    {
-        try {
-            $event = $booking->getEvent();
-            $formData = $booking->getFormDataAsArray();
-            
-            // Get guest information
-            $guestName = $formData['primary_contact']['name'] ?? 'Guest';
-            $guestEmail = $formData['primary_contact']['email'];
-            
-            // Get event details
-            $startTime = $booking->getStartTime();
-            $duration = round(($booking->getEndTime()->getTimestamp() - $startTime->getTimestamp()) / 60);
-            
-            // Get organizer/creator info
-            $organizer = $event->getCreatedBy();
-            $organizerName = $organizer ? $organizer->getName() : 'Host';
-            
-            // Get organization info
-            $organization = $event->getOrganization();
-            $companyName = $organization ? $organization->getName() : '';
-            
-            // Determine location
-            $location = $this->getEventLocation($event);
-            
-            // Get meeting link if available
-            $meetingLink = $formData['online_meeting']['link'] ?? '';
-            
-            // Generate frontend URLs
-            $frontendUrl = $_ENV['FRONTEND_URL'] ?? 'https://app.skedi.com';
-            $orgSlug = $organization ? $organization->getSlug() : '';
-            $eventSlug = $event->getSlug();
-            $rescheduleLink = $frontendUrl . '/' . $orgSlug . '/schedule/' . $eventSlug;
-            $calendarLink = $rescheduleLink; // Or generate ICS link
-            
-            // **GUEST EMAIL** - Uses meeting_scheduled template
-            $this->emailService->send(
-                $guestEmail,
-                'meeting_scheduled', // Template handles status internally
-                [
-                    'guest_name' => $guestName,
-                    'host_name' => $organizerName,
-                    'meeting_name' => $event->getName(),
-                    'event_name' => $event->getName(),
-                    'meeting_date' => $startTime->format('F j, Y'),
-                    'meeting_time' => $startTime->format('g:i A'),
-                    'meeting_duration' => $duration . ' minutes',
-                    'duration' => $duration . ' minutes',
-                    'meeting_location' => $location,
-                    'location' => $location,
-                    'meeting_link' => $meetingLink,
-                    'company_name' => $companyName,
-                    'reschedule_link' => $rescheduleLink,
-                    'calendar_link' => $calendarLink,
-                    'meeting_status' => $booking->getStatus(), 
-                    'booking_id' => $booking->getId(),
-                    'organization_id' => $organization ? $organization->getId() : null
-                ]
-            );
-            
-        } catch (\Exception $e) {
-            // Log error but don't fail the booking
-            error_log('Failed to send booking confirmation email: ' . $e->getMessage());
-            
-            if ($_ENV['APP_DEBUG'] ?? false) {
-                error_log('Email data: ' . json_encode([
-                    'booking_id' => $booking->getId(),
-                    'status' => $booking->getStatus(),
-                    'error' => $e->getMessage()
-                ]));
-            }
-        }
-    }
+    
     
     /**
      * Send notification email to host(s)

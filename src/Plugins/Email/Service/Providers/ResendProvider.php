@@ -244,7 +244,7 @@ class ResendProvider implements EmailProviderInterface
             'meeting_scheduled_host' => 'New meeting booked',
             'meeting_reminder' => 'Meeting reminder',
             'booking_created' => 'New booking created',
-            'booking_confirmed' => 'Booking confirmed',
+            'booking_confirmed' => '✅ Your booking has been confirmed!',
             'invitation' => 'You\'ve been invited',
             'meeting_cancelled' => 'Meeting Cancelled',
             'blank' => $data['subject'] ?? 'Notification from Skedi',

@@ -1,5 +1,5 @@
 <?php
-// Path: src/Plugins/Email/Templates/BookingConfirmedTemplate.php
+
 
 namespace App\Plugins\Email\Templates;
 
@@ -7,7 +7,7 @@ class BookingConfirmedTemplate
 {
     public static function render(array $data): string
     {
-        // Extract variables
+        // Extract variables with defaults
         $guestName = $data['guest_name'] ?? 'Guest';
         $hostName = $data['host_name'] ?? 'Host';
         $eventName = $data['event_name'] ?? 'Event';
@@ -19,6 +19,9 @@ class BookingConfirmedTemplate
         $calendarLink = $data['calendar_link'] ?? '#';
         $rescheduleLink = $data['reschedule_link'] ?? '#';
         $cancelLink = $data['cancel_link'] ?? '#';
+        $companyName = $data['company_name'] ?? '';
+        $bookingId = $data['booking_id'] ?? '';
+        $organizationId = $data['organization_id'] ?? '';
         
         $html = '<!DOCTYPE html>
 <html>
@@ -30,59 +33,90 @@ class BookingConfirmedTemplate
 '</head>
 <body>
     <div class="container">'
-        . EmailStyles::getHeader('Booking Confirmed!', '✅') . '
-        <div class="content">
-            <p class="greeting">Hi ' . $guestName . ',</p>
-            
-            <p class="message">Your booking with <strong>' . $hostName . '</strong> has been confirmed.</p>
-            
-            <div class="success">
-                <strong>✓ Your booking is confirmed</strong><br>
-                You\'ll receive a reminder before the meeting.
-            </div>
-            
-            <div class="details">
-                <div class="detail-row">
-                    <strong>Event:</strong> ' . $eventName . '
-                </div>
-                <div class="detail-row">
-                    <strong>Host:</strong> ' . $hostName . '
-                </div>
-                <div class="detail-row">
-                    <strong>Date:</strong> ' . $eventDate . '
-                </div>
-                <div class="detail-row">
-                    <strong>Time:</strong> ' . $eventTime . '
-                </div>
-                <div class="detail-row">
-                    <strong>Duration:</strong> ' . $duration . '
-                </div>
-                <div class="detail-row">
-                    <strong>Location:</strong> ' . $location . '
-                </div>';
+        . EmailStyles::getHeader('Booking Confirmed!') . '
         
+        <p class="greeting">Hi ' . htmlspecialchars($guestName) . ',</p>
+        
+        <p class="message">Great news! Your meeting with <strong>' . htmlspecialchars($hostName) . '</strong>';
+        
+        // Add company name if provided
+        if ($companyName) {
+            $html .= ' from <strong>' . htmlspecialchars($companyName) . '</strong>';
+        }
+        
+        $html .= ' has been confirmed.</p>
+        
+        <div class="success">
+            <div class="success-title">✅ Meeting Confirmed</div>
+            Your booking has been approved and calendar invitations have been sent.
+        </div>
+        
+        <div class="details">'
+            . EmailStyles::renderDetailRow('Meeting', $eventName)
+            . EmailStyles::renderDetailRow('Host', $hostName)
+            . EmailStyles::renderDetailRow('Date', $eventDate)
+            . EmailStyles::renderDetailRow('Time', $eventTime)
+            . EmailStyles::renderDetailRow('Duration', $duration)
+            . EmailStyles::renderDetailRow('Location', $location);
+        
+        // Add meeting link if provided
         if ($meetingLink) {
-            $html .= '
-                <div class="detail-row">
-                    <strong>Meeting Link:</strong> <a href="' . $meetingLink . '" style="color: #667eea;">Join Meeting</a>
-                </div>';
+            $html .= EmailStyles::renderDetailRow('Meeting Link', $meetingLink, true);
         }
         
         $html .= '
-            </div>
-            
+        </div>';
+        
+        // Action buttons
+        if ($calendarLink !== '#') {
+            $html .= '
             <div class="center">
-                <a href="' . $calendarLink . '" class="button">Add to Calendar</a>
-                <br>
-                <a href="' . $rescheduleLink . '" class="button-secondary">Reschedule</a>
-                <a href="' . $cancelLink . '" class="button-secondary">Cancel</a>
-            </div>'
-            . EmailStyles::getFooter() . '
-        </div>
+                <a href="' . htmlspecialchars($calendarLink) . '" class="btn btn-primary">
+                    Add to Calendar
+                </a>
+            </div>';
+        }
+        
+        // Secondary actions
+        $html .= '
+        <div class="center" style="margin-top: 15px;">';
+        
+        if ($rescheduleLink !== '#') {
+            $html .= '
+            <a href="' . htmlspecialchars($rescheduleLink) . '" class="btn btn-secondary" style="margin-right: 10px;">
+                Reschedule
+            </a>';
+        }
+        
+        if ($cancelLink !== '#') {
+            $html .= '
+            <a href="' . htmlspecialchars($cancelLink) . '" class="btn btn-cancel">
+                Cancel
+            </a>';
+        }
+        
+        $html .= '
+        </div>';
+        
+        // Footer note
+        $html .= '
+        <div class="footer-note">
+            <div class="footer-note-title">What\'s next:</div>
+            • You\'ll receive a reminder before the meeting<br>
+            • Calendar invitation has been sent to your email<br>';
+        
+        if ($meetingLink) {
+            $html .= '• Use the meeting link above to join<br>';
+        }
+        
+        $html .= '• Contact ' . htmlspecialchars($hostName) . ' if you need to make changes
+        </div>';
+        
+        $html .= EmailStyles::getFooter() . '
     </div>
 </body>
 </html>';
-        
+
         return $html;
     }
 }

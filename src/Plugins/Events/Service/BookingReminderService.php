@@ -43,8 +43,10 @@ class BookingReminderService
         $this->logger = $logger;
     }
     
+
+
     /**
-     * Queue all reminder emails for a booking
+     * Queue all reminder emails for a booking - FIXED to send to both guests AND hosts
      */
     public function queueRemindersForBooking(EventBookingEntity $booking): void
     {
@@ -98,7 +100,7 @@ class BookingReminderService
                         'reminder_text' => $config['text']
                     ]);
                     
-                    // Queue the reminder
+                    // *** SEND TO GUEST (original working code) ***
                     $queueResult = $this->emailService->queue(
                         $guestEmail,
                         'meeting_reminder',
@@ -119,7 +121,45 @@ class BookingReminderService
                         }
                     }
                     
-                    $this->logger->info("Queued {$type} reminder for booking {$booking->getId()}");
+                    $this->logger->info("Queued {$type} reminder for GUEST booking {$booking->getId()}");
+                    
+                    // *** NOW ALSO SEND TO HOSTS (new addition) ***
+                    try {
+                        $assignees = $this->entityManager->getRepository('App\Plugins\Events\Entity\EventAssigneeEntity')
+                            ->findBy(['event' => $event]);
+                        
+                        foreach ($assignees as $assignee) {
+                            // Update reminder data for host
+                            $hostReminderData = array_merge($reminderData, [
+                                'host_name' => $assignee->getUser()->getName()
+                            ]);
+                            
+                            $hostQueueResult = $this->emailService->queue(
+                                $assignee->getUser()->getEmail(),
+                                'meeting_reminder',
+                                $hostReminderData,
+                                [
+                                    'send_at' => $scheduledAt->format('Y-m-d H:i:s'),
+                                    'priority' => 5
+                                ]
+                            );
+                            
+                            // Update the queue record with booking reference
+                            if ($hostQueueResult['success'] && !empty($hostQueueResult['queue_id'])) {
+                                $queueItem = $this->entityManager->getRepository(EmailQueueEntity::class)->find($hostQueueResult['queue_id']);
+                                if ($queueItem) {
+                                    $queueItem->setBooking($booking);
+                                    $queueItem->setReminderType($type);
+                                    $this->entityManager->flush();
+                                }
+                            }
+                            
+                            $this->logger->info("Queued {$type} reminder for HOST {$assignee->getUser()->getEmail()} booking {$booking->getId()}");
+                        }
+                    } catch (\Exception $e) {
+                        $this->logger->warning("Failed to queue host reminders: " . $e->getMessage());
+                        // Don't fail the whole process if host reminders fail
+                    }
                 }
             }
             
